@@ -41,10 +41,10 @@ const (
 // ─── Car model ───────────────────────────────────────────────────────────────
 
 type Car struct {
-	ID          uuid.UUID        `json:"id"`
-	OwnerID     uuid.UUID        `json:"owner_id"`
-	Title       string           `json:"title"`
-	Description sql.NullString   `json:"-"`
+	ID          uuid.UUID      `json:"id"`
+	OwnerID     uuid.UUID      `json:"owner_id"`
+	Title       string         `json:"title"`
+	Description sql.NullString `json:"-"`
 
 	Make     string      `json:"make"`
 	Model    string      `json:"model"`
@@ -104,9 +104,9 @@ type CarResponse struct {
 	RentedWeeks  int              `json:"rented_weeks"`
 	TotalEarned  float64          `json:"total_earned"`
 
-	Photos    []interface{}    `json:"photos"`
-	Documents []interface{}    `json:"documents"`
-	Owner     *CarOwnerResp    `json:"owner,omitempty"`
+	Photos    []interface{} `json:"photos"`
+	Documents []interface{} `json:"documents"`
+	Owner     *CarOwnerResp `json:"owner,omitempty"`
 
 	CreatedAt RFC3339Time `json:"created_at"`
 	UpdatedAt RFC3339Time `json:"updated_at"`
@@ -148,23 +148,23 @@ type CarOwnerResp struct {
 // ToResponse converts Car to the API response format.
 func (c *Car) ToResponse(owner *User) *CarResponse {
 	resp := &CarResponse{
-		ID:          c.ID,
-		OwnerID:     c.OwnerID,
-		Title:       c.Title,
-		Specs:       CarSpecsResponse{Make: c.Make, Model: c.Model, Year: c.Year, BodyType: c.BodyType, FuelType: c.FuelType, Mileage: c.Mileage},
-		Location:    CarLocResponse{},
-		IsForRent:   c.IsForRent,
-		IsForSale:   c.IsForSale,
-		Currency:    c.Currency,
+		ID:           c.ID,
+		OwnerID:      c.OwnerID,
+		Title:        c.Title,
+		Specs:        CarSpecsResponse{Make: c.Make, Model: c.Model, Year: c.Year, BodyType: c.BodyType, FuelType: c.FuelType, Mileage: c.Mileage},
+		Location:     CarLocResponse{},
+		IsForRent:    c.IsForRent,
+		IsForSale:    c.IsForSale,
+		Currency:     c.Currency,
 		Requirements: CarReqResponse{MinYearsLicensed: c.MinYearsLicensed, DepositAmount: c.DepositAmount, InsuranceCoverage: c.InsuranceCoverage},
-		Status:      c.Status,
-		IsPaused:    c.IsPaused,
-		RentedWeeks: c.RentedWeeks,
-		TotalEarned: c.TotalEarned,
-		Photos:      make([]interface{}, 0),
-		Documents:   make([]interface{}, 0),
-		CreatedAt:   RFC3339Time(c.CreatedAt),
-		UpdatedAt:   RFC3339Time(c.UpdatedAt),
+		Status:       c.Status,
+		IsPaused:     c.IsPaused,
+		RentedWeeks:  c.RentedWeeks,
+		TotalEarned:  c.TotalEarned,
+		Photos:       make([]interface{}, 0),
+		Documents:    make([]interface{}, 0),
+		CreatedAt:    RFC3339Time(c.CreatedAt),
+		UpdatedAt:    RFC3339Time(c.UpdatedAt),
 	}
 
 	if c.Description.Valid {
@@ -220,11 +220,11 @@ func (c *Car) ToResponse(owner *User) *CarResponse {
 // ─── Request types ───────────────────────────────────────────────────────────
 
 type CreateCarRequest struct {
-	Title       string  `json:"title"`
-	Description *string `json:"description,omitempty"`
-	Make        string  `json:"make"`
-	Model       string  `json:"model"`
-	Year        int     `json:"year"`
+	Title       string      `json:"title"`
+	Description *string     `json:"description,omitempty"`
+	Make        string      `json:"make"`
+	Model       string      `json:"model"`
+	Year        int         `json:"year"`
 	BodyType    CarBodyType `json:"body_type"`
 	FuelType    FuelType    `json:"fuel_type"`
 	Mileage     int         `json:"mileage"`
@@ -249,8 +249,8 @@ type CreateCarRequest struct {
 }
 
 type UpdateCarRequest struct {
-	Title       *string `json:"title,omitempty"`
-	Description *string `json:"description,omitempty"`
+	Title       *string      `json:"title,omitempty"`
+	Description *string      `json:"description,omitempty"`
 	Make        *string      `json:"make,omitempty"`
 	Model       *string      `json:"model,omitempty"`
 	Year        *int         `json:"year,omitempty"`
@@ -278,4 +278,33 @@ type UpdateCarRequest struct {
 
 	Status   *CarListingStatus `json:"status,omitempty"`
 	IsPaused *bool             `json:"is_paused,omitempty"`
+}
+
+type PhotoSlotType string
+
+type CarPhoto struct {
+	ID        uuid.UUID     `json:"id"`
+	CarID     uuid.UUID     `json:"car_id"`
+	SlotType  PhotoSlotType `json:"slot_type"`
+	FilePath  string        `json:"-"`
+	FileURL   string        `json:"file_url"`
+	FileSize  int           `json:"file_size"`
+	MimeType  string        `json:"mime_type"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
+}
+
+type CarDocumentType string
+
+type CarDocument struct {
+	ID           uuid.UUID       `json:"id"`
+	CarID        uuid.UUID       `json:"car_id"`
+	DocumentType CarDocumentType `json:"document_type"`
+	FileName     string          `json:"file_name"`
+	FilePath     string          `json:"-"`
+	FileURL      string          `json:"file_url"`
+	FileSize     int             `json:"file_size"`
+	MimeType     string          `json:"mime_type"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
 }

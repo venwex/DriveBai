@@ -6,8 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"drivebai/internal/models"
-
+	"github.com/drivebai/backend/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )

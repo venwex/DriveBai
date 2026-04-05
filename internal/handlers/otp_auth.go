@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"drivebai/internal/auth"
-	"drivebai/internal/models"
-	"drivebai/internal/repository"
+	"github.com/drivebai/backend/internal/auth"
+	"github.com/drivebai/backend/internal/models"
+	"github.com/drivebai/backend/internal/repository"
 )
 
 type OTPAuthHandler struct {
@@ -389,15 +389,15 @@ func (h *OTPAuthHandler) generateTokens(ctx context.Context, user *models.User) 
 }
 
 type UserProfile struct {
-	ID               interface{}              `json:"id"`
-	Email            string                   `json:"email"`
-	Role             models.Role              `json:"role"`
-	FirstName        string                   `json:"first_name"`
-	LastName         string                   `json:"last_name"`
-	Phone            *string                  `json:"phone,omitempty"`
-	IsEmailVerified  bool                     `json:"is_email_verified"`
-	OnboardingStatus models.OnboardingStatus  `json:"onboarding_status"`
-	ProfilePhotoURL  *string                  `json:"profile_photo_url,omitempty"`
+	ID               interface{}             `json:"id"`
+	Email            string                  `json:"email"`
+	Role             models.Role             `json:"role"`
+	FirstName        string                  `json:"first_name"`
+	LastName         string                  `json:"last_name"`
+	Phone            *string                 `json:"phone,omitempty"`
+	IsEmailVerified  bool                    `json:"is_email_verified"`
+	OnboardingStatus models.OnboardingStatus `json:"onboarding_status"`
+	ProfilePhotoURL  *string                 `json:"profile_photo_url,omitempty"`
 }
 
 func toUserProfile(u *models.User) UserProfile {
