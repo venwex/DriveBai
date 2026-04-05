@@ -1,1 +1,265 @@
 package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/drivebai/backend/internal/models"
+	"github.com/drivebai/backend/internal/repository"
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+)
+
+type CarHandler struct {
+	carRepo  *repository.CarRepository
+	userRepo *repository.UserRepository
+}
+
+func NewCarHandler(carRepo *repository.CarRepository, userRepo *repository.UserRepository) *CarHandler {
+	return &CarHandler{carRepo: carRepo, userRepo: userRepo}
+}
+
+func (h *CarHandler) CreateCar(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := GetUserID(ctx)
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
+		return
+	}
+
+	var req models.CreateCarRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, http.StatusBadRequest, models.NewValidationError("Invalid request body"))
+		return
+	}
+	if req.Make == "" || req.Model == "" || req.Year == 0 {
+		WriteError(w, http.StatusBadRequest, models.NewValidationError("Make, model, and year are required"))
+		return
+	}
+
+	title := req.Title
+	if title == "" {
+		title = fmt.Sprintf("%d %s %s", req.Year, req.Make, req.Model)
+	}
+
+	now := time.Now()
+	car := &models.Car{
+		ID: uuid.New(), OwnerID: userID, Title: title,
+		Make: req.Make, Model: req.Model, Year: req.Year,
+		BodyType: req.BodyType, FuelType: req.FuelType, Mileage: req.Mileage,
+		IsForRent: req.IsForRent, IsForSale: req.IsForSale,
+		Currency: "USD", Status: models.CarStatusPending,
+		CreatedAt: now, UpdatedAt: now,
+	}
+
+	if car.BodyType == "" {
+		car.BodyType = models.BodyTypeSedan
+	}
+	if car.FuelType == "" {
+		car.FuelType = models.FuelTypeGas
+	}
+
+	if req.Description != nil {
+		car.Description = sql.NullString{String: *req.Description, Valid: true}
+	}
+	if req.Address != nil {
+		car.Address = sql.NullString{String: *req.Address, Valid: true}
+	}
+	if req.Neighborhood != nil {
+		car.Neighborhood = sql.NullString{String: *req.Neighborhood, Valid: true}
+	}
+	if req.Latitude != nil {
+		car.Latitude = sql.NullFloat64{Float64: *req.Latitude, Valid: true}
+	}
+	if req.Longitude != nil {
+		car.Longitude = sql.NullFloat64{Float64: *req.Longitude, Valid: true}
+	}
+	if req.Area != nil {
+		car.Area = sql.NullString{String: *req.Area, Valid: true}
+	}
+	if req.Street != nil {
+		car.Street = sql.NullString{String: *req.Street, Valid: true}
+	}
+	if req.Block != nil {
+		car.Block = sql.NullString{String: *req.Block, Valid: true}
+	}
+	if req.Zip != nil {
+		car.Zip = sql.NullString{String: *req.Zip, Valid: true}
+	}
+	if req.WeeklyRentPrice != nil {
+		car.WeeklyRentPrice = sql.NullFloat64{Float64: *req.WeeklyRentPrice, Valid: true}
+	}
+	if req.SalePrice != nil {
+		car.SalePrice = sql.NullFloat64{Float64: *req.SalePrice, Valid: true}
+	}
+	if req.MinYearsLicensed != nil {
+		car.MinYearsLicensed = *req.MinYearsLicensed
+	} else {
+		car.MinYearsLicensed = 2
+	}
+	if req.DepositAmount != nil {
+		car.DepositAmount = *req.DepositAmount
+	} else {
+		car.DepositAmount = 500
+	}
+	if req.InsuranceCoverage != nil {
+		car.InsuranceCoverage = *req.InsuranceCoverage
+	} else {
+		car.InsuranceCoverage = models.InsuranceFullCoverage
+	}
+
+	if err := h.carRepo.Create(ctx, car); err != nil {
+		slog.Error("failed to create car", "error", err)
+		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
+		return
+	}
+
+	owner, _ := h.userRepo.GetByID(ctx, userID)
+	WriteJSON(w, http.StatusCreated, car.ToResponse(owner))
+}
+
+func (h *CarHandler) UpdateCar(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := GetUserID(ctx)
+	if !ok {
+		WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
+		return
+	}
+
+	carID, err := uuid.Parse(chi.URLParam(r, "carId"))
+	if err != nil {
+		WriteError(w, http.StatusBadRequest, models.NewValidationError("Invalid car ID"))
+		return
+	}
+
+	car, err := h.carRepo.GetByID(ctx, carID)
+	if err != nil || car == nil {
+		WriteError(w, http.StatusNotFound, models.NewAPIError("NOT_FOUND", "Car not found"))
+		return
+	}
+	if car.OwnerID != userID {
+		WriteError(w, http.StatusForbidden, models.NewAPIError("FORBIDDEN", "You do not own this car"))
+		return
+	}
+
+	var req models.UpdateCarRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteError(w, http.StatusBadRequest, models.NewValidationError("Invalid request body"))
+		return
+	}
+
+	if req.Title != nil {
+		car.Title = *req.Title
+	}
+	if req.Description != nil {
+		car.Description = sql.NullString{String: *req.Description, Valid: true}
+	}
+	if req.Make != nil {
+		car.Make = *req.Make
+	}
+	if req.Model != nil {
+		car.Model = *req.Model
+	}
+	if req.Year != nil {
+		car.Year = *req.Year
+	}
+	if req.BodyType != nil {
+		car.BodyType = *req.BodyType
+	}
+	if req.FuelType != nil {
+		car.FuelType = *req.FuelType
+	}
+	if req.Mileage != nil {
+		car.Mileage = *req.Mileage
+	}
+	if req.Address != nil {
+		car.Address = sql.NullString{String: *req.Address, Valid: true}
+	}
+	if req.Neighborhood != nil {
+		car.Neighborhood = sql.NullString{String: *req.Neighborhood, Valid: true}
+	}
+	if req.Latitude != nil {
+		car.Latitude = sql.NullFloat64{Float64: *req.Latitude, Valid: true}
+	}
+	if req.Longitude != nil {
+		car.Longitude = sql.NullFloat64{Float64: *req.Longitude, Valid: true}
+	}
+	if req.Area != nil {
+		car.Area = sql.NullString{String: *req.Area, Valid: true}
+	}
+	if req.Street != nil {
+		car.Street = sql.NullString{String: *req.Street, Valid: true}
+	}
+	if req.Block != nil {
+		car.Block = sql.NullString{String: *req.Block, Valid: true}
+	}
+	if req.Zip != nil {
+		car.Zip = sql.NullString{String: *req.Zip, Valid: true}
+	}
+	if req.IsForRent != nil {
+		car.IsForRent = *req.IsForRent
+	}
+	if req.WeeklyRentPrice != nil {
+		car.WeeklyRentPrice = sql.NullFloat64{Float64: *req.WeeklyRentPrice, Valid: true}
+	}
+	if req.IsForSale != nil {
+		car.IsForSale = *req.IsForSale
+	}
+	if req.SalePrice != nil {
+		car.SalePrice = sql.NullFloat64{Float64: *req.SalePrice, Valid: true}
+	}
+	if req.MinYearsLicensed != nil {
+		car.MinYearsLicensed = *req.MinYearsLicensed
+	}
+	if req.DepositAmount != nil {
+		car.DepositAmount = *req.DepositAmount
+	}
+	if req.InsuranceCoverage != nil {
+		car.InsuranceCoverage = *req.InsuranceCoverage
+	}
+	if req.Status != nil {
+		car.Status = *req.Status
+	}
+	if req.IsPaused != nil {
+		car.IsPaused = *req.IsPaused
+	}
+
+	if err := h.carRepo.Update(ctx, car); err != nil {
+		slog.Error("failed to update car", "error", err)
+		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
+		return
+	}
+
+	owner, _ := h.userRepo.GetByID(ctx, userID)
+	WriteJSON(w, http.StatusOK, car.ToResponse(owner))
+}
+
+func (h *CarHandler) ListAvailableListings(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	if status == "" {
+		status = "available"
+	}
+	search := r.URL.Query().Get("search")
+
+	cars, err := h.carRepo.GetAvailableListings(r.Context(), status, search)
+	if err != nil {
+		slog.Error("failed to list cars", "error", err)
+		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
+		return
+	}
+
+	var responses []*models.CarResponse
+	for _, car := range cars {
+		owner, _ := h.userRepo.GetByID(r.Context(), car.OwnerID)
+		responses = append(responses, car.ToResponse(owner))
+	}
+
+	WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"listings": responses,
+		"count":    len(responses),
+	})
+}
