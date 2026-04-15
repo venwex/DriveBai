@@ -10,7 +10,7 @@ import (
 
 const otpLength = 6
 
-// GenerateOTP creates a 6-digit code and its SHA-256 hash.
+// Генерирует 6-значный OTP и возвращает как исходный код так и его хеш
 func GenerateOTP() (string, string, error) {
 	code := ""
 	for i := 0; i < otpLength; i++ {
@@ -20,14 +20,19 @@ func GenerateOTP() (string, string, error) {
 		}
 		code += fmt.Sprintf("%d", n.Int64())
 	}
-	return code, HashOTP(code), nil
+
+	hash := HashOTP(code)
+
+	return code, hash, nil
 }
 
+// Создаем хенкод sha256 для OTP
 func HashOTP(code string) string {
-	h := sha256.Sum256([]byte(code))
-	return hex.EncodeToString(h[:])
+	hash := sha256.Sum256([]byte(code))
+	return hex.EncodeToString(hash[:])
 }
 
+// Проверяем имеет ли код OTP правильный формат
 func ValidateOTPFormat(code string) bool {
 	if len(code) != otpLength {
 		return false
