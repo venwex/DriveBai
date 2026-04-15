@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"time"
-
 	"github.com/drivebai/backend/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -37,101 +36,139 @@ type TokenPair struct {
 }
 
 func NewJWTService(secret string, accessTTL, refreshTTL time.Duration) *JWTService {
-	return &JWTService{secret: []byte(secret), accessTokenTTL: accessTTL, refreshTokenTTL: refreshTTL}
+	return &JWTService{
+		secret:          []byte(secret),
+		accessTokenTTL:  accessTTL,
+		refreshTokenTTL: refreshTTL,
+	}
 }
 
-func (svc *JWTService) GenerateAccessToken(user *models.User) (string, time.Time, error) {
+func (s *JWTService) GenerateAccessToken(user *models.User) (string, time.Time, error) {
 	now := time.Now()
-	exp := now.Add(svc.accessTokenTTL)
+	expiresAt := now.Add(s.accessTokenTTL)
+
 	claims := AccessTokenClaims{
-		UserID: user.ID, Email: user.Email, Role: user.Role,
+		UserID: user.ID,
+		Email:  user.Email,
+		Role:   user.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(exp),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Issuer:    tokenIssuer,
 			Subject:   user.ID.String(),
 		},
 	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := tok.SignedString(svc.secret)
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(s.secret)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	return signed, exp, nil
+
+	return tokenString, expiresAt, nil
 }
 
-func (svc *JWTService) ValidateAccessToken(tokenString string) (*AccessTokenClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &AccessTokenClaims{}, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+func (s *JWTService) GenerateRefreshToken() (string, string, time.Time, error) {
+	rawToken := uuid.New().String() + "-" + uuid.New().String()
+	hashedToken := s.HashRefreshToken(rawToken)
+	expiresAt := time.Now().Add(s.refreshTokenTTL)
+
+	return rawToken, hashedToken, expiresAt, nil
+}
+
+func (s *JWTService) ValidateAccessToken(tokenString string) (*AccessTokenClaims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &AccessTokenClaims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
 		}
-		return svc.secret, nil
+		return s.secret, nil
 	})
+
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return nil, models.ErrTokenExpired
 		}
 		return nil, models.ErrTokenInvalid
 	}
+
 	claims, ok := token.Claims.(*AccessTokenClaims)
 	if !ok || !token.Valid {
 		return nil, models.ErrTokenInvalid
 	}
+
 	return claims, nil
 }
 
-func (svc *JWTService) GenerateRefreshToken() (string, string, time.Time, error) {
-	raw := uuid.New().String() + "-" + uuid.New().String()
-	return raw, svc.HashRefreshToken(raw), time.Now().Add(svc.refreshTokenTTL), nil
+func (s *JWTService) HashRefreshToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }
 
-func (svc *JWTService) HashRefreshToken(token string) string {
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
+func (s *JWTService) GetRefreshTokenTTL() time.Duration {
+	return s.refreshTokenTTL
 }
 
-func (svc *JWTService) GetRefreshTokenTTL() time.Duration {
-	return svc.refreshTokenTTL
-}
+func (s *JWTService) GenerateRegistrationToken(email string) (string, error) {
+	expiresAt := time.Now().Add(registrationTokenTTL)
 
-// ─── Registration token (short-lived JWT proving email ownership) ────────────
-
-type RegistrationClaims struct {
-	Email   string `json:"email"`
-	Purpose string `json:"purpose"`
-	jwt.RegisteredClaims
-}
-
-func (svc *JWTService) GenerateRegistrationToken(email string) (string, error) {
 	claims := RegistrationClaims{
-		Email: email, Purpose: registrationPurpose,
+		Email:   email,
+		Purpose: registrationPurpose,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(registrationTokenTTL)),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    tokenIssuer,
 		},
 	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return tok.SignedString(svc.secret)
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(s.secret)
 }
 
-func (svc *JWTService) ValidateRegistrationToken(tokenString string) (string, error) {
+func (s *JWTService) ValidateRegistrationToken(tokenString string) (string, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &RegistrationClaims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, errors.New("unexpected signing method")
 		}
-		return svc.secret, nil
+		return s.secret, nil
 	})
+
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {
 			return "", models.ErrTokenExpired
 		}
 		return "", models.ErrTokenInvalid
 	}
+
 	claims, ok := token.Claims.(*RegistrationClaims)
 	if !ok || !token.Valid || claims.Purpose != registrationPurpose {
 		return "", models.ErrTokenInvalid
 	}
+
 	return claims.Email, nil
+}
+
+// Заявки на регистрацию встроены в наш краткосрочный токен
+// Он будет подтверждать что указанный адрес почты был подтвержден с помощью OTP, и позволяет айосеру завершить создание учетной записи без повторной проверки
+type RegistrationClaims struct {
+	Email   string `json:"email"`
+	Purpose string `json:"purpose"`
+	jwt.RegisteredClaims
+}
+
+// Он создаёт безопасный токен для сброса пароля
+// Возвращает исходный токен для отправки пользователю, хешированный токен для хранения ну и срок действия
+func GeneratePasswordResetToken(ttl time.Duration) (string, string, time.Time, error) {
+	rawToken := uuid.New().String() + "-" + uuid.New().String()
+	hashedToken := HashPasswordResetToken(rawToken)
+	expiresAt := time.Now().Add(ttl)
+
+	return rawToken, hashedToken, expiresAt, nil
+}
+
+// Функция выполняет хеширование токена сброса пароля для последующего поиска
+func HashPasswordResetToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }
