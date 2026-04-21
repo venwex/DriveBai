@@ -133,6 +133,18 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID uuid.UUID, p
 	return err
 }
 
+func (r *UserRepository) UpdateRole(ctx context.Context, userID uuid.UUID, role models.Role) error {
+	query := `UPDATE users SET role = $2, onboarding_status = $3, updated_at = NOW() WHERE id = $1`
+	result, err := r.db.Pool.Exec(ctx, query, userID, role, models.OnboardingRoleSelected)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return models.ErrUserNotFound
+	}
+	return nil
+}
+
 func (r *UserRepository) EmailExists(ctx context.Context, email string) (bool, error) {
 	var exists bool
 	err := r.db.Pool.QueryRow(ctx,
@@ -159,16 +171,4 @@ func (r *UserRepository) RecordOTPSend(ctx context.Context, key, ip string) erro
 		strings.ToLower(key), ip,
 	)
 	return err
-}
-
-func (r *UserRepository) UpdateRole(ctx context.Context, userID uuid.UUID, role models.Role) error {
-	query := `UPDATE users SET role = $2, onboarding_status = $3, updated_at = NOW() WHERE id = $1`
-	result, err := r.db.Pool.Exec(ctx, query, userID, role, models.OnboardingRoleSelected)
-	if err != nil {
-		return err
-	}
-	if result.RowsAffected() == 0 {
-		return models.ErrUserNotFound
-	}
-	return nil
 }
