@@ -40,10 +40,23 @@ type errorResponse struct {
 	Error *models.APIError `json:"error"`
 }
 
+type SuccessResponse struct {
+	Message string      `json:"message,omitempty"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
 func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+func WriteSuccess(w http.ResponseWriter, status int, message string, data interface{}) {
+	response := SuccessResponse{
+		Message: message,
+		Data:    data,
+	}
+	WriteJSON(w, status, response)
 }
 
 func WriteError(w http.ResponseWriter, status int, apiErr *models.APIError) {

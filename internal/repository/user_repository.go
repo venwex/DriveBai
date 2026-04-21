@@ -90,6 +90,49 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 	return u, nil
 }
 
+func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
+	query := `
+		UPDATE users
+		SET email = $2, password_hash = $3, role = $4, first_name = $5, last_name = $6, phone = $7, is_email_verified = $8, onboarding_status = $9, profile_photo_url = $10
+		WHERE id = $1
+		RETURNING updated_at
+	`
+
+	err := r.db.Pool.QueryRow(ctx, query,
+		user.ID,
+		strings.ToLower(user.Email),
+		user.PasswordHash,
+		user.Role,
+		user.FirstName,
+		user.LastName,
+		user.Phone,
+		user.IsEmailVerified,
+		user.OnboardingStatus,
+		user.ProfilePhotoURL,
+	).Scan(&user.UpdatedAt)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return models.ErrUserNotFound
+		}
+		return err
+	}
+
+	return nil
+}
+
+func (r *UserRepository) VerifyEmail(ctx context.Context, userID uuid.UUID) error {
+	query := `UPDATE users SET is_email_verified = TRUE WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, userID)
+	return err
+}
+
+func (r *UserRepository) UpdatePassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
+	query := `UPDATE users SET password_hash = $2 WHERE id = $1`
+	_, err := r.db.Pool.Exec(ctx, query, userID, passwordHash)
+	return err
+}
+
 func (r *UserRepository) EmailExists(ctx context.Context, email string) (bool, error) {
 	var exists bool
 	err := r.db.Pool.QueryRow(ctx,
@@ -116,4 +159,16 @@ func (r *UserRepository) RecordOTPSend(ctx context.Context, key, ip string) erro
 		strings.ToLower(key), ip,
 	)
 	return err
+}
+
+func (r *UserRepository) UpdateRole(ctx context.Context, userID uuid.UUID, role models.Role) error {
+	query := `UPDATE users SET role = $2, onboarding_status = $3, updated_at = NOW() WHERE id = $1`
+	result, err := r.db.Pool.Exec(ctx, query, userID, role, models.OnboardingRoleSelected)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return models.ErrUserNotFound
+	}
+	return nil
 }

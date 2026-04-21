@@ -86,6 +86,43 @@ type LoginOTP struct {
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
-func (o *LoginOTP) IsExpired()  bool { return time.Now().After(o.ExpiresAt) }
+func (o *LoginOTP) IsExpired() bool  { return time.Now().After(o.ExpiresAt) }
 func (o *LoginOTP) IsConsumed() bool { return o.ConsumedAt != nil }
-func (o *LoginOTP) IsLocked()   bool { return o.Attempts >= LoginOTPMaxAttempts }
+func (o *LoginOTP) IsLocked() bool   { return o.Attempts >= LoginOTPMaxAttempts }
+
+type DocumentType string
+
+const (
+	DocumentDriversLicense DocumentType = "drivers_license"
+	DocumentRegistration   DocumentType = "registration"
+)
+
+func (d DocumentType) IsValid() bool {
+	switch d {
+	case DocumentDriversLicense, DocumentRegistration:
+		return true
+	}
+
+	return false
+}
+
+type DocumentStatus string
+
+const (
+	DocumentStatusUploaded DocumentStatus = "uploaded"
+	DocumentStatusVerified DocumentStatus = "verified"
+	DocumentStatusRejected DocumentStatus = "rejected"
+)
+
+type Document struct {
+	ID        uuid.UUID      `json:"id"`
+	UserID    uuid.UUID      `json:"user_id"`
+	Type      DocumentType   `json:"type"`
+	FileName  string         `json:"file_name"`
+	FilePath  string         `json:"-"` // Don't expose path
+	FileSize  int64          `json:"file_size"`
+	MimeType  string         `json:"mime_type,omitempty"`
+	Status    DocumentStatus `json:"status"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
