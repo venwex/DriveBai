@@ -26,12 +26,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-password}
-      DB_NAME: ${DB_NAME:-carsharing}
-      DB_SSLMODE: disable
+      DATABASE_URL: postgres://postgres:password@postgres:5432/carsharing?sslmode=disable
       
       # App config
       APP_ENV: ${APP_ENV:-production}

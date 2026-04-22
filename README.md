@@ -134,7 +134,7 @@ docker-compose up -d
 make migrate-up
 
 # Start the server
-go run cmd/main.go
+go run cmd/api/main.go
 ```
 
 Swagger UI will be available at `http://localhost:8080/swagger`
