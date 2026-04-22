@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/drivebai/backend/internal/httputil"
 	"github.com/drivebai/backend/internal/models"
 	"github.com/drivebai/backend/internal/repository"
 	"github.com/go-chi/chi/v5"
@@ -15,12 +16,62 @@ import (
 )
 
 type CarHandler struct {
-	carRepo  *repository.CarRepository
-	userRepo *repository.UserRepository
+	carRepo   *repository.CarRepository
+	photoRepo *repository.CarPhotoRepository
+	userRepo  *repository.UserRepository
+	docRepo   *repository.CarDocumentRepository
+	uploadDir string
 }
 
-func NewCarHandler(carRepo *repository.CarRepository, userRepo *repository.UserRepository) *CarHandler {
-	return &CarHandler{carRepo: carRepo, userRepo: userRepo}
+func NewCarHandler(
+	carRepo *repository.CarRepository,
+	photoRepo *repository.CarPhotoRepository,
+	docRepo *repository.CarDocumentRepository,
+	userRepo *repository.UserRepository,
+	uploadDir string,
+) *CarHandler {
+	return &CarHandler{
+		carRepo:   carRepo,
+		photoRepo: photoRepo,
+		docRepo:   docRepo,
+		userRepo:  userRepo,
+		uploadDir: uploadDir,
+	}
+}
+
+// ListCars returns all cars for the authenticated owner
+func (h *CarHandler) ListCars(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := httputil.GetUserID(ctx)
+	if !ok {
+		httputil.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
+		return
+	}
+
+	cars, err := h.carRepo.GetByOwnerID(ctx, userID)
+	if err != nil {
+		slog.Error("failed to get cars", "error", err, "error_type", fmt.Sprintf("%T", err), "user_id", userID)
+		httputil.WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
+		return
+	}
+
+	// Get owner info once
+	owner, err := h.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		slog.Error("failed to get owner", "error", err, "user_id", userID)
+	}
+
+	// Build response with photos and documents for each car
+	var responses []*models.CarResponse
+	for _, car := range cars {
+		photos, _ := h.photoRepo.GetByCarID(ctx, car.ID)
+		documents, _ := h.docRepo.GetByCarID(ctx, car.ID)
+		responses = append(responses, car.ToResponse(photos, documents, owner))
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"cars": responses,
+	})
 }
 
 func (h *CarHandler) CreateCar(w http.ResponseWriter, r *http.Request) {
@@ -118,8 +169,11 @@ func (h *CarHandler) CreateCar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get owner info for response
 	owner, _ := h.userRepo.GetByID(ctx, userID)
-	WriteJSON(w, http.StatusCreated, car.ToResponse(owner))
+
+	slog.Info("car created", "car_id", car.ID, "user_id", userID)
+	httputil.WriteJSON(w, http.StatusCreated, car.ToResponse(nil, nil, owner))
 }
 
 func (h *CarHandler) UpdateCar(w http.ResponseWriter, r *http.Request) {
@@ -234,15 +288,24 @@ func (h *CarHandler) UpdateCar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get photos, documents, and owner info for response
+	photos, _ := h.photoRepo.GetByCarID(ctx, car.ID)
+	documents, _ := h.docRepo.GetByCarID(ctx, car.ID)
 	owner, _ := h.userRepo.GetByID(ctx, userID)
-	WriteJSON(w, http.StatusOK, car.ToResponse(owner))
+
+	slog.Info("car updated", "car_id", car.ID, "user_id", userID)
+	httputil.WriteJSON(w, http.StatusOK, car.ToResponse(photos, documents, owner))
 }
 
 func (h *CarHandler) ListAvailableListings(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	// Get query parameters for filtering
 	status := r.URL.Query().Get("status")
 	if status == "" {
 		status = "available"
 	}
+
 	search := r.URL.Query().Get("search")
 
 	cars, err := h.carRepo.GetAvailableListings(r.Context(), status, search)
@@ -252,10 +315,12 @@ func (h *CarHandler) ListAvailableListings(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Build response with photos and owner info for each car
 	var responses []*models.CarResponse
 	for _, car := range cars {
+		photos, _ := h.photoRepo.GetByCarID(ctx, car.ID)
 		owner, _ := h.userRepo.GetByID(r.Context(), car.OwnerID)
-		responses = append(responses, car.ToResponse(owner))
+		responses = append(responses, car.ToResponse(photos, nil, owner))
 	}
 
 	WriteJSON(w, http.StatusOK, map[string]interface{}{

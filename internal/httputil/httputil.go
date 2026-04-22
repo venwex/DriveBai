@@ -5,8 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/drivebai/backend/internal/models"
 	"github.com/google/uuid"
 )
+
+type ErrorResponse struct {
+	Error *models.APIError `json:"error"`
+}
 
 type SuccessResponse struct {
 	Message string      `json:"message,omitempty"`
@@ -25,6 +30,12 @@ func WriteSuccess(w http.ResponseWriter, status int, message string, data interf
 		Data:    data,
 	}
 	WriteJSON(w, status, response)
+}
+
+func WriteError(w http.ResponseWriter, status int, apiErr *models.APIError) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(ErrorResponse{Error: apiErr})
 }
 
 type ContextKey string

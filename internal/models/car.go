@@ -145,8 +145,17 @@ type CarOwnerResp struct {
 	ReviewCount int       `json:"review_count"`
 }
 
+type CarPhotoResponse struct {
+	ID        uuid.UUID     `json:"id"`
+	SlotType  PhotoSlotType `json:"slot_type"`
+	FileURL   string        `json:"file_url"`
+	FileSize  int           `json:"file_size"`
+	CreatedAt RFC3339Time   `json:"created_at"`
+	UpdatedAt RFC3339Time   `json:"updated_at"`
+}
+
 // ToResponse converts Car to the API response format.
-func (c *Car) ToResponse(owner *User) *CarResponse {
+func (c *Car) ToResponse(photos []CarPhoto, documents []CarDocument, owner *User) *CarResponse {
 	resp := &CarResponse{
 		ID:           c.ID,
 		OwnerID:      c.OwnerID,
@@ -203,6 +212,18 @@ func (c *Car) ToResponse(owner *User) *CarResponse {
 	if c.SalePrice.Valid {
 		v := c.SalePrice.Float64
 		resp.SalePrice = &v
+	}
+
+	// Convert photos
+	for _, p := range photos {
+		resp.Photos = append(resp.Photos, CarPhotoResponse{
+			ID:        p.ID,
+			SlotType:  p.SlotType,
+			FileURL:   p.FileURL,
+			FileSize:  p.FileSize,
+			CreatedAt: RFC3339Time(p.CreatedAt),
+			UpdatedAt: RFC3339Time(p.UpdatedAt),
+		})
 	}
 
 	if owner != nil {
