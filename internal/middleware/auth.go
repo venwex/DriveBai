@@ -39,3 +39,25 @@ func AuthMiddleware(jwtSvc *auth.JWTService) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// RequireRole creates middleware that checks for specific roles
+func RequireRole(roles ...models.Role) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userRole, ok := httputil.GetRole(r.Context())
+			if !ok {
+				httputil.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
+				return
+			}
+
+			for _, role := range roles {
+				if userRole == role {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+
+			httputil.WriteError(w, http.StatusForbidden, models.NewAPIError("FORBIDDEN", "Insufficient permissions"))
+		})
+	}
+}
