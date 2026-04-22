@@ -25,7 +25,7 @@ func Load() (*Config, error) {
 	return &Config{
 		Port:               getEnv("PORT", "8080"),
 		Env:                getEnv("ENV", "development"),
-		DatabaseURL:        getEnv("DATABASE_URL", "postgres://drivebai:drivebai_secret@localhost:5432/drivebai_mini?sslmode=disable"),
+		DatabaseURL:        getEnv("DATABASE_URL", "postgres://drivebai:drivebai_secret@postgres:5432/drivebai?sslmode=disable"),
 		JWTSecret:          getEnv("JWT_SECRET", "dev-secret-change-me"),
 		JWTAccessTokenTTL:  getDuration("JWT_ACCESS_TOKEN_TTL", 15*time.Minute),
 		JWTRefreshTokenTTL: getDuration("JWT_REFRESH_TOKEN_TTL", 30*24*time.Hour),
