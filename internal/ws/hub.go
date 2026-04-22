@@ -6,16 +6,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"golang.org/x/net/websocket"
 )
-
-type Conn struct {
-	UserID uuid.UUID
-	hub    *Hub
-	ws     *websocket.Conn
-	send   chan []byte
-	logger *slog.Logger
-}
 
 // Event represents a WebSocket event to be sent to clients.
 type Event struct {
