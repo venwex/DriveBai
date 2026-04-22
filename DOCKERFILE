@@ -1,4 +1,4 @@
-# Build stage
+
 FROM golang:1.24-alpine AS builder
 WORKDIR /app
 
@@ -13,7 +13,7 @@ RUN go mod tidy
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/api ./cmd/api
 
-# Final stage
+
 FROM alpine:3.19
 WORKDIR /app
 
