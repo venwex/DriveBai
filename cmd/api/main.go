@@ -52,6 +52,8 @@ func main() {
 	tokenRepo := repository.NewTokenRepository(db)
 	otpRepo := repository.NewLoginOTPRepository(db)
 	carRepo := repository.NewCarRepository(db)
+	carPhotoRepo := repository.NewCarPhotoRepository(db)
+	carDocRepo := repository.NewCarDocumentRepository(db)
 	likesRepo := repository.NewLikesRepository(db)
 	docRepo := repository.NewDocumentRepository(db)
 
@@ -65,7 +67,7 @@ func main() {
 	}
 	// Handlers
 	otpAuth := handlers.NewOTPAuthHandler(userRepo, tokenRepo, otpRepo, jwtSvc, logger)
-	carHandler := handlers.NewCarHandler(carRepo, userRepo)
+	carHandler := handlers.NewCarHandler(carRepo, carPhotoRepo, carDocRepo, userRepo, uploadDir)
 	likesHandler := handlers.NewLikesHandler(likesRepo, carRepo)
 	userHandler := handlers.NewUserHandler(userRepo, docRepo, logger, uploadDir)
 

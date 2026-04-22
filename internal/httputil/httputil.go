@@ -47,8 +47,17 @@ const (
 )
 
 // Context helpers
-
 func GetUserID(ctx context.Context) (uuid.UUID, bool) {
 	userID, ok := ctx.Value(UserIDKey).(uuid.UUID)
 	return userID, ok
+}
+
+func GetEmail(ctx context.Context) (string, bool) {
+	email, ok := ctx.Value(EmailKey).(string)
+	return email, ok
+}
+
+func GetRole(ctx context.Context) (models.Role, bool) {
+	role, ok := ctx.Value(RoleKey).(models.Role)
+	return role, ok
 }

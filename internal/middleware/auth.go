@@ -6,6 +6,7 @@ import (
 
 	"github.com/drivebai/backend/internal/auth"
 	"github.com/drivebai/backend/internal/handlers"
+	"github.com/drivebai/backend/internal/httputil"
 	"github.com/drivebai/backend/internal/models"
 )
 
@@ -44,6 +45,7 @@ func AuthMiddleware(jwtSvc *auth.JWTService) func(http.Handler) http.Handler {
 func RequireRole(roles ...models.Role) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{})
 			userRole, ok := httputil.GetRole(r.Context())
 			if !ok {
 				httputil.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)

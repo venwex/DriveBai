@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/drivebai/backend/internal/httputil"
 	"github.com/drivebai/backend/internal/models"
 	"github.com/drivebai/backend/internal/repository"
 	"github.com/go-chi/chi/v5"
@@ -13,6 +14,17 @@ import (
 type LikesHandler struct {
 	likesRepo *repository.LikesRepository
 	carRepo   *repository.CarRepository
+}
+
+func NewLikesHandler(likesRepo *repository.LikesRepository, carRepo *repository.CarRepository) *LikesHandler {
+	return &LikesHandler{
+		likesRepo: likesRepo,
+		carRepo:   carRepo,
+	}
+}
+
+type LikedListingsResponse struct {
+	LikedListingIDs []uuid.UUID `json:"liked_listing_ids"`
 }
 
 // GetLikedListings returns all listing IDs that the current user has liked
@@ -35,27 +47,6 @@ func (h *LikesHandler) GetLikedListings(w http.ResponseWriter, r *http.Request) 
 	}
 
 	WriteJSON(w, http.StatusOK, LikedListingsResponse{LikedListingIDs: ids})
-}
-
-func (h *LikesHandler) GetLikedListings(w http.ResponseWriter, r *http.Request) {
-	userID, ok := GetUserID(r.Context())
-	if !ok {
-		WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
-		return
-	}
-
-	ids, err := h.likesRepo.GetLikedListingIDs(r.Context(), userID)
-	if err != nil {
-		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
-		return
-	}
-	if ids == nil {
-		ids = []uuid.UUID{}
-	}
-
-	WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"liked_listing_ids": ids,
-	})
 }
 
 func (h *LikesHandler) LikeListing(w http.ResponseWriter, r *http.Request) {
