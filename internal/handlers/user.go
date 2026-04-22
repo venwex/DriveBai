@@ -16,11 +16,11 @@ type UserHandler struct {
 	uploadDir string
 }
 
-func NewUserHandler(userRepo *repository.UserRepository, docRepo *repository.DocumentRepository, slog *slog.Logger, uploadDir string) *UserHandler {
+func NewUserHandler(userRepo *repository.UserRepository, docRepo *repository.DocumentRepository, logger *slog.Logger, uploadDir string) *UserHandler {
 	return &UserHandler{
 		userRepo:  userRepo,
 		docRepo:   docRepo,
-		logger:    slog,
+		logger:    logger,
 		uploadDir: uploadDir,
 	}
 }

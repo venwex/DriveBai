@@ -15,6 +15,8 @@ type Config struct {
 	JWTSecret          string
 	JWTAccessTokenTTL  time.Duration
 	JWTRefreshTokenTTL time.Duration
+
+	UploadDir string
 }
 
 func Load() (*Config, error) {
@@ -27,6 +29,7 @@ func Load() (*Config, error) {
 		JWTSecret:          getEnv("JWT_SECRET", "dev-secret-change-me"),
 		JWTAccessTokenTTL:  getDuration("JWT_ACCESS_TOKEN_TTL", 15*time.Minute),
 		JWTRefreshTokenTTL: getDuration("JWT_REFRESH_TOKEN_TTL", 30*24*time.Hour),
+		UploadDir:          getEnv("UPLOAD_DIR", "./upload"),
 	}, nil
 }
 

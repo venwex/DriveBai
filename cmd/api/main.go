@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	fmt.Println("DriveBai Backend — Minimal Defense Build")
+	fmt.Println("DriveBai Backend — Checkpoint 3 Defense")
 
 	// Config
 	cfg, err := config.Load()
@@ -53,11 +53,21 @@ func main() {
 	otpRepo := repository.NewLoginOTPRepository(db)
 	carRepo := repository.NewCarRepository(db)
 	likesRepo := repository.NewLikesRepository(db)
+	docRepo := repository.NewDocumentRepository(db)
 
+	uploadDir := cfg.UploadDir
+	if uploadDir == "" {
+		uploadDir = "./upload"
+	}
+	if err := os.MkdirAll(uploadDir, 0775); err != nil {
+		logger.Error("failed to create uploads directory", "error", err)
+		os.Exit(1)
+	}
 	// Handlers
 	otpAuth := handlers.NewOTPAuthHandler(userRepo, tokenRepo, otpRepo, jwtSvc, logger)
 	carHandler := handlers.NewCarHandler(carRepo, userRepo)
 	likesHandler := handlers.NewLikesHandler(likesRepo, carRepo)
+	userHandler := handlers.NewUserHandler(userRepo, docRepo, logger, uploadDir)
 
 	// Router
 	r := chi.NewRouter()
@@ -100,6 +110,7 @@ func main() {
 		// Protected
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.AuthMiddleware(jwtSvc))
+			r.Get("/me", userHandler.GetCurrentUser)
 
 			r.Route("/cars", func(r chi.Router) {
 				r.Post("/", carHandler.CreateCar)
