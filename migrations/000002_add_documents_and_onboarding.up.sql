@@ -17,16 +17,16 @@ UPDATE users SET onboarding_status = 'complete' WHERE role IS NOT NULL;
 
 -- Documents table for driver uploads
 CREATE TABLE documents (
-                           id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                           user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                           type VARCHAR(50) NOT NULL, -- 'drivers_license' or 'registration'
-                           file_name VARCHAR(255) NOT NULL,
-                           file_path VARCHAR(500) NOT NULL,
-                           file_size BIGINT NOT NULL,
-                           mime_type VARCHAR(100),
-                           status VARCHAR(50) NOT NULL DEFAULT 'uploaded', -- 'uploaded', 'verified', 'rejected'
-                           created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                           updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+   type VARCHAR(50) NOT NULL, -- 'drivers_license' or 'registration'
+   file_name VARCHAR(255) NOT NULL,
+   file_path VARCHAR(500) NOT NULL,
+   file_size BIGINT NOT NULL,
+   mime_type VARCHAR(100),
+   status VARCHAR(50) NOT NULL DEFAULT 'uploaded', -- 'uploaded', 'verified', 'rejected'
+   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- Index for user document lookups
@@ -41,12 +41,12 @@ CREATE TRIGGER update_documents_updated_at
 
 -- Password reset tokens table (replaces OTP for password reset)
 CREATE TABLE password_reset_tokens (
-                                       id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-                                       user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                                       token_hash VARCHAR(255) NOT NULL,
-                                       expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-                                       used_at TIMESTAMP WITH TIME ZONE,
-                                       created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+   token_hash VARCHAR(255) NOT NULL,
+   expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+   used_at TIMESTAMP WITH TIME ZONE,
+   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- Index for token lookups
