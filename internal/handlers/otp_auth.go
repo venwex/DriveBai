@@ -2,68 +2,97 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/drivebai/backend/internal/auth"
+	"github.com/drivebai/backend/internal/email"
 	"github.com/drivebai/backend/internal/models"
 	"github.com/drivebai/backend/internal/repository"
 )
 
+// OTPAuthHandler handles passwordless email-OTP login and registration-completion flows.
 type OTPAuthHandler struct {
-	userRepo  *repository.UserRepository
-	tokenRepo *repository.TokenRepository
-	otpRepo   *repository.LoginOTPRepository
-	jwtSvc    *auth.JWTService
-	logger    *slog.Logger
+	userRepo    *repository.UserRepository
+	tokenRepo   *repository.TokenRepository
+	otpRepo     *repository.LoginOTPRepository
+	profileRepo *repository.ProfileRepository
+	jwtSvc      *auth.JWTService
+	otpSender   email.OTPSender
+	logger      *slog.Logger
 }
 
 func NewOTPAuthHandler(
 	userRepo *repository.UserRepository,
 	tokenRepo *repository.TokenRepository,
 	otpRepo *repository.LoginOTPRepository,
+	profileRepo *repository.ProfileRepository,
 	jwtSvc *auth.JWTService,
+	otpSender email.OTPSender,
 	logger *slog.Logger,
 ) *OTPAuthHandler {
-	return &OTPAuthHandler{userRepo: userRepo, tokenRepo: tokenRepo, otpRepo: otpRepo, jwtSvc: jwtSvc, logger: logger}
+	return &OTPAuthHandler{
+		userRepo:    userRepo,
+		tokenRepo:   tokenRepo,
+		otpRepo:     otpRepo,
+		profileRepo: profileRepo,
+		jwtSvc:      jwtSvc,
+		otpSender:   otpSender,
+		logger:      logger,
+	}
 }
 
-const (
-	maxOTPsPerEmail    = 5
-	maxIPOTPs          = 10
-	otpRateLimitWindow = 15 * time.Minute
-	otpExpiry          = 10 * time.Minute
-)
+// ─── Rate-limit constants ───────────────────────────────────────────────────
 
-// ─── Request / Response types ────────────────────────────────────────────────
+// maxOTPsPerEmail is the maximum number of OTPs that may be issued to a single
+// email address within otpRateLimitWindow.
+const maxOTPsPerEmail = 5
 
-type OTPRequestReq struct {
+// maxIPOTPs is the maximum number of OTPs that may be issued from a single
+// IP address within otpRateLimitWindow.
+const maxIPOTPs = 10
+
+// otpRateLimitWindow is the sliding window used for rate limiting.
+const otpRateLimitWindow = 15 * time.Minute
+
+// otpExpiry is how long a freshly issued OTP remains valid.
+const otpExpiry = 10 * time.Minute
+
+// ─── Request / Response types ───────────────────────────────────────────────
+
+type OTPRequestLoginRequest struct {
 	Email string `json:"email"`
 }
 
-type OTPVerifyReq struct {
+type OTPVerifyLoginRequest struct {
 	Email string `json:"email"`
 	Code  string `json:"code"`
 }
 
-type OTPVerifyLoginResp struct {
-	Kind         string             `json:"kind"`
+// OTPVerifyLoginResponse is returned when OTP verification succeeds and the
+// email belongs to an existing user.  The `kind` discriminator lets the iOS
+// client branch without inspecting field presence.
+type OTPVerifyLoginResponse struct {
+	Kind         string             `json:"kind"` // "login"
 	AccessToken  string             `json:"access_token"`
 	RefreshToken string             `json:"refresh_token"`
 	ExpiresAt    models.RFC3339Time `json:"expires_at"`
 	User         UserProfile        `json:"user"`
 }
 
-type OTPVerifyRegisterResp struct {
-	Kind              string `json:"kind"`
+// OTPVerifyRegisterResponse is returned when the email is NOT in the users
+// table.  The client should use registration_token + email to complete sign-up.
+type OTPVerifyRegisterResponse struct {
+	Kind              string `json:"kind"` // "register"
 	RegistrationToken string `json:"registration_token"`
 	Email             string `json:"email"`
 }
 
-type CompleteRegReq struct {
+// CompleteRegistrationRequest finishes account creation using a registration token
+// that was obtained from OTPVerifyLogin.
+type CompleteRegistrationRequest struct {
 	RegistrationToken string      `json:"registration_token"`
 	FirstName         string      `json:"first_name"`
 	LastName          string      `json:"last_name"`
@@ -72,25 +101,17 @@ type CompleteRegReq struct {
 	Role              models.Role `json:"role"`
 }
 
-type RegisterResponse struct {
-	AccessToken  string             `json:"access_token"`
-	RefreshToken string             `json:"refresh_token"`
-	ExpiresAt    models.RFC3339Time `json:"expires_at"`
-	User         UserProfile        `json:"user"`
-}
+// ─── Handlers ───────────────────────────────────────────────────────────────
 
-type RefreshTokenReq struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
-// ─── Handlers ────────────────────────────────────────────────────────────────
-
+// RequestOTP handles POST /auth/otp/request.
+// Always returns 200 with a generic message — never reveals whether the email exists.
 func (h *OTPAuthHandler) RequestOTP(w http.ResponseWriter, r *http.Request) {
-	var req OTPRequestReq
+	var req OTPRequestLoginRequest
 	if err := DecodeJSON(r, &req); err != nil {
 		WriteError(w, http.StatusBadRequest, models.NewValidationError("Invalid request body"))
 		return
 	}
+
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	if req.Email == "" || !strings.Contains(req.Email, "@") {
 		WriteError(w, http.StatusBadRequest, models.NewValidationError("A valid email address is required"))
@@ -98,11 +119,14 @@ func (h *OTPAuthHandler) RequestOTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	since := time.Now().Add(-otpRateLimitWindow)
 
+	// ── Rate limiting ──────────────────────────────────────────────────────
+
+	// Per-email rate limit (reuse existing otp_rate_limits table)
+	since := time.Now().Add(-otpRateLimitWindow)
 	emailCount, err := h.userRepo.GetOTPSendCount(ctx, req.Email, since)
 	if err != nil {
-		h.logger.Error("otp rate-limit check failed", "error", err)
+		h.logger.Error("otp/request: failed to get email rate limit count", "error", err)
 		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		return
 	}
@@ -111,10 +135,11 @@ func (h *OTPAuthHandler) RequestOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-IP rate limit (also via otp_rate_limits table)
 	ip := realIP(r)
 	ipCount, err := h.userRepo.GetOTPSendCount(ctx, ip, since)
 	if err != nil {
-		h.logger.Error("otp IP rate-limit check failed", "error", err)
+		h.logger.Error("otp/request: failed to get IP rate limit count", "error", err)
 		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		return
 	}
@@ -123,44 +148,68 @@ func (h *OTPAuthHandler) RequestOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── Generate OTP ───────────────────────────────────────────────────────
+
 	rawCode, codeHash, err := auth.GenerateOTP()
 	if err != nil {
-		h.logger.Error("failed to generate OTP", "error", err)
+		h.logger.Error("otp/request: failed to generate OTP", "error", err)
 		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		return
 	}
 
 	expiresAt := time.Now().Add(otpExpiry)
-	if _, err := h.otpRepo.Create(ctx, req.Email, codeHash, expiresAt, ip, r.UserAgent()); err != nil {
-		h.logger.Error("failed to store OTP", "error", err)
+	userAgent := r.UserAgent()
+
+	otpRecord, err := h.otpRepo.Create(ctx, req.Email, codeHash, expiresAt, ip, userAgent)
+	if err != nil {
+		h.logger.Error("otp/request: failed to store OTP", "error", err)
 		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		return
 	}
 
+	// Record the send in the rate-limit table (email row + IP row)
 	_ = h.userRepo.RecordOTPSend(ctx, req.Email, ip)
 	_ = h.userRepo.RecordOTPSend(ctx, ip, ip)
 
-	// Dev mode: print OTP to console
-	fmt.Printf("\n"+
-		"╔══════════════════════════════════════════════════════════╗\n"+
-		"║  LOGIN OTP (dev mode)                                    ║\n"+
-		"╠══════════════════════════════════════════════════════════╣\n"+
-		"║  To:   %-50s ║\n"+
-		"║  Code: %-50s ║\n"+
-		"╚══════════════════════════════════════════════════════════╝\n\n",
-		req.Email, rawCode)
+	// ── Send email ─────────────────────────────────────────────────────────
 
+	// Fire and forget: email failures must NOT reveal user enumeration info
+	// via a different response shape. We log the error and return success.
+	result, sendErr := h.otpSender.SendLoginOTP(req.Email, rawCode)
+	if sendErr != nil {
+		h.logger.Error("otp/request: failed to send OTP email",
+			"error", sendErr,
+			"email", req.Email,
+			"otp_id", otpRecord.ID,
+		)
+	} else if result != nil && result.MessageID != "" {
+		// Persist MailerSend message ID for delivery tracking
+		if dbErr := h.otpRepo.SetMessageID(ctx, otpRecord.ID, result.MessageID); dbErr != nil {
+			h.logger.Error("otp/request: failed to store message_id",
+				"error", dbErr,
+				"otp_id", otpRecord.ID,
+				"message_id", result.MessageID,
+			)
+		}
+	}
+
+	// Always respond generically
 	WriteJSON(w, http.StatusOK, map[string]string{
 		"message": "If this email is valid, a login code has been sent.",
 	})
 }
 
+// VerifyOTP handles POST /auth/otp/verify.
+// On success:
+//   - existing user  → returns AuthTokens (kind=login)
+//   - new user       → returns a short-lived registration_token (kind=register)
 func (h *OTPAuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
-	var req OTPVerifyReq
+	var req OTPVerifyLoginRequest
 	if err := DecodeJSON(r, &req); err != nil {
 		WriteError(w, http.StatusBadRequest, models.NewValidationError("Invalid request body"))
 		return
 	}
+
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	req.Code = strings.TrimSpace(req.Code)
 
@@ -175,23 +224,36 @@ func (h *OTPAuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	// ── Fetch latest unconsumed OTP ────────────────────────────────────────
+
 	otp, err := h.otpRepo.GetLatestUnconsumed(ctx, req.Email)
 	if err != nil {
-		h.logger.Error("failed to fetch OTP", "error", err)
+		h.logger.Error("otp/verify: failed to fetch OTP", "error", err)
 		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		return
 	}
+
+	// Respond generically on missing/expired/locked OTP so we don't expose
+	// details about the OTP lifecycle to an attacker.
 	if otp == nil || otp.IsExpired() || otp.IsConsumed() {
 		WriteError(w, http.StatusUnauthorized, models.ErrOTPExpired)
 		return
 	}
+
 	if otp.IsLocked() {
 		WriteError(w, http.StatusUnauthorized, models.ErrOTPAttemptsExceeded)
 		return
 	}
 
-	if auth.HashOTP(req.Code) != otp.CodeHash {
-		newAttempts, _ := h.otpRepo.IncrementAttempts(ctx, otp.ID)
+	// ── Compare hash ───────────────────────────────────────────────────────
+
+	expectedHash := auth.HashOTP(req.Code)
+	if expectedHash != otp.CodeHash {
+		// Increment attempts; lock if ceiling reached
+		newAttempts, incErr := h.otpRepo.IncrementAttempts(ctx, otp.ID)
+		if incErr != nil {
+			h.logger.Error("otp/verify: failed to increment attempts", "error", incErr)
+		}
 		if newAttempts >= models.LoginOTPMaxAttempts {
 			WriteError(w, http.StatusUnauthorized, models.ErrOTPAttemptsExceeded)
 			return
@@ -200,77 +262,96 @@ func (h *OTPAuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── OTP is valid — consume it ──────────────────────────────────────────
+
 	if err := h.otpRepo.MarkConsumed(ctx, otp.ID); err != nil {
-		h.logger.Error("failed to consume OTP", "error", err)
+		h.logger.Error("otp/verify: failed to mark OTP consumed", "error", err)
 		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		return
 	}
 
+	// ── Check whether user exists ──────────────────────────────────────────
+
 	user, err := h.userRepo.GetByEmail(ctx, req.Email)
 	if err != nil && !models.IsAPIError(err) {
-		h.logger.Error("user lookup failed", "error", err)
+		h.logger.Error("otp/verify: failed to look up user", "error", err)
 		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		return
 	}
 
 	if user != nil {
+		// ── Existing user: issue full auth tokens ──────────────────────────
 		tokens, err := h.generateTokens(ctx, user)
 		if err != nil {
-			h.logger.Error("token generation failed", "error", err)
+			h.logger.Error("otp/verify: failed to generate tokens", "error", err)
 			WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 			return
 		}
-		WriteJSON(w, http.StatusOK, OTPVerifyLoginResp{
-			Kind: "login", AccessToken: tokens.AccessToken, RefreshToken: tokens.RefreshToken,
-			ExpiresAt: models.NewRFC3339Time(tokens.ExpiresAt), User: toUserProfile(user),
+
+		WriteJSON(w, http.StatusOK, OTPVerifyLoginResponse{
+			Kind:         "login",
+			AccessToken:  tokens.AccessToken,
+			RefreshToken: tokens.RefreshToken,
+			ExpiresAt:    models.NewRFC3339Time(tokens.ExpiresAt),
+			User:         toUserProfile(user),
 		})
 		return
 	}
 
+	// ── New user: issue a short-lived registration token ───────────────────
 	regToken, err := h.jwtSvc.GenerateRegistrationToken(req.Email)
 	if err != nil {
-		h.logger.Error("registration token failed", "error", err)
+		h.logger.Error("otp/verify: failed to generate registration token", "error", err)
 		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		return
 	}
-	WriteJSON(w, http.StatusOK, OTPVerifyRegisterResp{Kind: "register", RegistrationToken: regToken, Email: req.Email})
+
+	WriteJSON(w, http.StatusOK, OTPVerifyRegisterResponse{
+		Kind:              "register",
+		RegistrationToken: regToken,
+		Email:             req.Email,
+	})
 }
 
+// CompleteRegistration handles POST /auth/otp/complete-registration.
+// Creates a new account using a registration token obtained from VerifyOTP.
 func (h *OTPAuthHandler) CompleteRegistration(w http.ResponseWriter, r *http.Request) {
-	var req CompleteRegReq
+	var req CompleteRegistrationRequest
 	if err := DecodeJSON(r, &req); err != nil {
 		WriteError(w, http.StatusBadRequest, models.NewValidationError("Invalid request body"))
 		return
 	}
+
+	// ── Validate registration token ────────────────────────────────────────
+
 	if req.RegistrationToken == "" {
-		WriteError(w, http.StatusBadRequest, models.ErrRegTokenRequired)
+		WriteError(w, http.StatusBadRequest, models.ErrRegistrationTokenRequired)
 		return
 	}
 
-	email, err := h.jwtSvc.ValidateRegistrationToken(req.RegistrationToken)
+	verifiedEmail, err := h.jwtSvc.ValidateRegistrationToken(req.RegistrationToken)
 	if err != nil {
-		WriteError(w, http.StatusUnauthorized, models.ErrTokenInvalid)
+		if models.IsAPIError(err) {
+			WriteError(w, http.StatusUnauthorized, models.GetAPIError(err))
+		} else {
+			WriteError(w, http.StatusUnauthorized, models.ErrTokenInvalid)
+		}
 		return
 	}
 
-	if req.FirstName == "" || req.LastName == "" {
-		WriteError(w, http.StatusBadRequest, models.NewValidationError("First and last name are required"))
-		return
-	}
-	if req.Password == "" || len(req.Password) < 8 {
-		WriteError(w, http.StatusBadRequest, models.NewValidationError("Password must be at least 8 characters"))
-		return
-	}
-	if !req.Role.IsValid() || req.Role == models.RoleAdmin {
-		WriteError(w, http.StatusBadRequest, models.NewValidationError("Role must be 'driver' or 'car_owner'"))
+	// ── Validate other fields ──────────────────────────────────────────────
+
+	if err := validateCompleteRegistration(&req); err != nil {
+		WriteError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	ctx := r.Context()
 
-	exists, err := h.userRepo.EmailExists(ctx, email)
+	// Guard against double-registration (e.g. concurrent requests)
+	exists, err := h.userRepo.EmailExists(ctx, verifiedEmail)
 	if err != nil {
-		h.logger.Error("email check failed", "error", err)
+		h.logger.Error("otp/complete-registration: failed to check email", "error", err)
 		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		return
 	}
@@ -279,149 +360,157 @@ func (h *OTPAuthHandler) CompleteRegistration(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	hash, err := auth.HashPassword(req.Password)
+	// ── Hash password ──────────────────────────────────────────────────────
+
+	passwordHash, err := auth.HashPassword(req.Password)
 	if err != nil {
-		h.logger.Error("password hash failed", "error", err)
+		h.logger.Error("otp/complete-registration: failed to hash password", "error", err)
 		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		return
 	}
+
+	// ── Create user ────────────────────────────────────────────────────────
 
 	var phone *string
 	if req.Phone != "" {
 		phone = &req.Phone
 	}
 
-	user := &models.User{
-		Email: email, PasswordHash: &hash, Role: req.Role,
-		FirstName: req.FirstName, LastName: req.LastName, Phone: phone,
-		IsEmailVerified: true, OnboardingStatus: models.OnboardingRoleSelected,
+	onboardingStatus := models.OnboardingCreated
+	if req.Role.IsValid() && req.Role != "" {
+		onboardingStatus = models.OnboardingRoleSelected
 	}
+
+	user := &models.User{
+		Email:            verifiedEmail, // from the validated token, not the request body
+		PasswordHash:     &passwordHash,
+		Role:             req.Role,
+		FirstName:        req.FirstName,
+		LastName:         req.LastName,
+		Phone:            phone,
+		IsEmailVerified:  true, // OTP already proved ownership
+		OnboardingStatus: onboardingStatus,
+	}
+
 	if err := h.userRepo.Create(ctx, user); err != nil {
 		if apiErr := models.GetAPIError(err); apiErr != nil {
 			WriteError(w, http.StatusConflict, apiErr)
 		} else {
-			h.logger.Error("user creation failed", "error", err)
+			h.logger.Error("otp/complete-registration: failed to create user", "error", err)
 			WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		}
 		return
 	}
 
+	// Default mode profile + active pointer. Second profile is lazily created on switch.
+	if req.Role == models.RoleDriver || req.Role == models.RoleCarOwner {
+		profile, pErr := h.profileRepo.Create(ctx, user.ID, req.Role, user.OnboardingStatus)
+		if pErr != nil {
+			h.logger.Error("otp/complete-registration: failed to create default profile", "error", pErr, "user_id", user.ID)
+		} else if setErr := h.userRepo.SetActiveProfile(ctx, user.ID, profile.ID, profile.Role); setErr != nil {
+			h.logger.Error("otp/complete-registration: failed to set default active profile", "error", setErr, "user_id", user.ID)
+		}
+	}
+
+	// ── Issue tokens ───────────────────────────────────────────────────────
+
 	tokens, err := h.generateTokens(ctx, user)
 	if err != nil {
-		h.logger.Error("token generation failed", "error", err)
+		h.logger.Error("otp/complete-registration: failed to generate tokens", "error", err)
 		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
 		return
 	}
 
 	WriteJSON(w, http.StatusCreated, RegisterResponse{
-		AccessToken: tokens.AccessToken, RefreshToken: tokens.RefreshToken,
-		ExpiresAt: models.NewRFC3339Time(tokens.ExpiresAt), User: toUserProfile(user),
-	})
-}
-
-func (h *OTPAuthHandler) RefreshToken(w http.ResponseWriter, r *http.Request) {
-	var req RefreshTokenReq
-	if err := DecodeJSON(r, &req); err != nil {
-		WriteError(w, http.StatusBadRequest, models.NewValidationError("Invalid request body"))
-		return
-	}
-	if req.RefreshToken == "" {
-		WriteError(w, http.StatusBadRequest, models.NewValidationError("Refresh token is required"))
-		return
-	}
-
-	ctx := r.Context()
-	hash := h.jwtSvc.HashRefreshToken(req.RefreshToken)
-
-	stored, err := h.tokenRepo.GetByHash(ctx, hash)
-	if err != nil {
-		h.logger.Error("token lookup failed", "error", err)
-		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
-		return
-	}
-	if stored == nil || stored.IsRevoked() {
-		WriteError(w, http.StatusUnauthorized, models.ErrTokenInvalid)
-		return
-	}
-	if stored.IsExpired() {
-		WriteError(w, http.StatusUnauthorized, models.ErrTokenExpired)
-		return
-	}
-
-	_ = h.tokenRepo.RevokeToken(ctx, stored.ID)
-
-	user, err := h.userRepo.GetByID(ctx, stored.UserID)
-	if err != nil {
-		h.logger.Error("user lookup failed", "error", err)
-		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
-		return
-	}
-
-	tokens, err := h.generateTokens(ctx, user)
-	if err != nil {
-		h.logger.Error("token generation failed", "error", err)
-		WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
-		return
-	}
-
-	WriteJSON(w, http.StatusOK, RegisterResponse{
-		AccessToken: tokens.AccessToken, RefreshToken: tokens.RefreshToken,
-		ExpiresAt: models.NewRFC3339Time(tokens.ExpiresAt), User: toUserProfile(user),
+		AccessToken:  tokens.AccessToken,
+		RefreshToken: tokens.RefreshToken,
+		ExpiresAt:    models.NewRFC3339Time(tokens.ExpiresAt),
+		User:         toUserProfile(user),
 	})
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// generateTokens issues a new access + refresh token pair for the given user.
 func (h *OTPAuthHandler) generateTokens(ctx context.Context, user *models.User) (*auth.TokenPair, error) {
-	access, exp, err := h.jwtSvc.GenerateAccessToken(user)
+	accessToken, expiresAt, err := h.jwtSvc.GenerateAccessToken(user)
 	if err != nil {
 		return nil, err
 	}
-	refresh, refreshHash, refreshExp, err := h.jwtSvc.GenerateRefreshToken()
+
+	refreshToken, refreshHash, refreshExpires, err := h.jwtSvc.GenerateRefreshToken()
 	if err != nil {
 		return nil, err
 	}
-	tok := &models.RefreshToken{UserID: user.ID, TokenHash: refreshHash, ExpiresAt: refreshExp}
-	if err := h.tokenRepo.CreateRefreshToken(ctx, tok); err != nil {
+
+	storedToken := &models.RefreshToken{
+		UserID:    user.ID,
+		TokenHash: refreshHash,
+		ExpiresAt: refreshExpires,
+	}
+	if err := h.tokenRepo.CreateRefreshToken(ctx, storedToken); err != nil {
 		return nil, err
 	}
-	return &auth.TokenPair{AccessToken: access, RefreshToken: refresh, ExpiresAt: exp}, nil
+
+	return &auth.TokenPair{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		ExpiresAt:    expiresAt,
+	}, nil
 }
 
-type UserProfile struct {
-	ID               interface{}             `json:"id"`
-	Email            string                  `json:"email"`
-	Role             models.Role             `json:"role"`
-	FirstName        string                  `json:"first_name"`
-	LastName         string                  `json:"last_name"`
-	Phone            *string                 `json:"phone,omitempty"`
-	IsEmailVerified  bool                    `json:"is_email_verified"`
-	OnboardingStatus models.OnboardingStatus `json:"onboarding_status"`
-	ProfilePhotoURL  *string                 `json:"profile_photo_url,omitempty"`
-}
-
-func toUserProfile(u *models.User) UserProfile {
+// toUserProfile converts a models.User to the UserProfile response type.
+// Defined here as a package-level function so OTPAuthHandler can use it
+// without depending on AuthHandler.
+func toUserProfile(user *models.User) UserProfile {
 	return UserProfile{
-		ID: u.ID, Email: u.Email, Role: u.Role,
-		FirstName: u.FirstName, LastName: u.LastName, Phone: u.Phone,
-		IsEmailVerified: u.IsEmailVerified, OnboardingStatus: u.OnboardingStatus,
-		ProfilePhotoURL: u.ProfilePhotoURL,
+		ID:               user.ID,
+		Email:            user.Email,
+		Role:             user.Role,
+		FirstName:        user.FirstName,
+		LastName:         user.LastName,
+		Phone:            user.Phone,
+		IsEmailVerified:  user.IsEmailVerified,
+		OnboardingStatus: user.OnboardingStatus,
+		ProfilePhotoURL:  user.ProfilePhotoURL,
 	}
 }
 
+// realIP returns the best-effort client IP from the request.
 func realIP(r *http.Request) string {
 	if ip := r.Header.Get("X-Real-IP"); ip != "" {
 		return ip
 	}
 	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+		// X-Forwarded-For may contain multiple IPs; first is the client
 		if idx := strings.Index(ip, ","); idx != -1 {
 			return strings.TrimSpace(ip[:idx])
 		}
 		return strings.TrimSpace(ip)
 	}
+	// Fall back to RemoteAddr (strip port)
 	addr := r.RemoteAddr
 	if idx := strings.LastIndex(addr, ":"); idx != -1 {
 		return addr[:idx]
 	}
 	return addr
+}
+
+func validateCompleteRegistration(req *CompleteRegistrationRequest) *models.APIError {
+	if req.FirstName == "" {
+		return models.NewValidationError("First name is required")
+	}
+	if req.LastName == "" {
+		return models.NewValidationError("Last name is required")
+	}
+	if req.Password == "" {
+		return models.NewValidationError("Password is required")
+	}
+	if len(req.Password) < 8 {
+		return models.NewValidationError("Password must be at least 8 characters")
+	}
+	if !req.Role.IsValid() || req.Role == models.RoleAdmin {
+		return models.NewValidationError("Role must be 'driver' or 'car_owner'")
+	}
+	return nil
 }

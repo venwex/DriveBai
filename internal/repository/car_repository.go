@@ -21,7 +21,7 @@ func NewCarRepository(db *database.DB) *CarRepository {
 	return &CarRepository{db: db}
 }
 
-// creates a new car listing
+// Create creates a new car listing
 func (r *CarRepository) Create(ctx context.Context, car *models.Car) error {
 	query := `
 		INSERT INTO cars (
@@ -56,7 +56,7 @@ func (r *CarRepository) Create(ctx context.Context, car *models.Car) error {
 	return err
 }
 
-// retrieves a car by its ID
+// GetByID retrieves a car by its ID
 func (r *CarRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Car, error) {
 	query := `
 		SELECT
@@ -92,7 +92,7 @@ func (r *CarRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Car,
 	return &car, nil
 }
 
-// retrieves all cars for a specific owner
+// GetByOwnerID retrieves all cars for a specific owner
 func (r *CarRepository) GetByOwnerID(ctx context.Context, ownerID uuid.UUID) ([]*models.Car, error) {
 	query := `
 		SELECT
@@ -135,7 +135,7 @@ func (r *CarRepository) GetByOwnerID(ctx context.Context, ownerID uuid.UUID) ([]
 	return cars, nil
 }
 
-// updates a car listing
+// Update updates a car listing
 func (r *CarRepository) Update(ctx context.Context, car *models.Car) error {
 	query := `
 		UPDATE cars SET
@@ -170,7 +170,7 @@ func (r *CarRepository) Update(ctx context.Context, car *models.Car) error {
 	return nil
 }
 
-// deletes a car listing
+// Delete deletes a car listing
 func (r *CarRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	query := `DELETE FROM cars WHERE id = $1`
 	result, err := r.db.Pool.Exec(ctx, query, id)
@@ -185,7 +185,7 @@ func (r *CarRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// updates only the status and is_paused fields
+// UpdateStatus updates only the status and is_paused fields
 func (r *CarRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status models.CarListingStatus, isPaused bool) error {
 	query := `UPDATE cars SET status = $2, is_paused = $3 WHERE id = $1`
 	result, err := r.db.Pool.Exec(ctx, query, id, status, isPaused)
@@ -200,7 +200,7 @@ func (r *CarRepository) UpdateStatus(ctx context.Context, id uuid.UUID, status m
 	return nil
 }
 
-// retrieves all available car listings for drivers to browse
+// GetAvailableListings retrieves all available car listings for drivers to browse
 func (r *CarRepository) GetAvailableListings(ctx context.Context, status string, search string) ([]*models.Car, error) {
 	query := `
 		SELECT
@@ -260,7 +260,7 @@ func (r *CarRepository) GetAvailableListings(ctx context.Context, status string,
 	return cars, nil
 }
 
-// updates only the location fields for a car
+// UpdateLocation updates only the location fields for a car
 func (r *CarRepository) UpdateLocation(ctx context.Context, id uuid.UUID, lat, lng float64, area, street, block, zip string) error {
 	query := `
 		UPDATE cars SET
@@ -278,7 +278,7 @@ func (r *CarRepository) UpdateLocation(ctx context.Context, id uuid.UUID, lat, l
 	return nil
 }
 
-// handles car photo database operations
+// CarPhotoRepository handles car photo database operations
 type CarPhotoRepository struct {
 	db *database.DB
 }
@@ -287,7 +287,7 @@ func NewCarPhotoRepository(db *database.DB) *CarPhotoRepository {
 	return &CarPhotoRepository{db: db}
 }
 
-// creates a new car photo record
+// Create creates a new car photo record
 func (r *CarPhotoRepository) Create(ctx context.Context, photo *models.CarPhoto) error {
 	query := `
 		INSERT INTO car_photos (id, car_id, slot_type, file_path, file_url, file_size, mime_type, created_at, updated_at)
@@ -302,7 +302,7 @@ func (r *CarPhotoRepository) Create(ctx context.Context, photo *models.CarPhoto)
 	return err
 }
 
-// retrieves all photos for a car
+// GetByCarID retrieves all photos for a car
 func (r *CarPhotoRepository) GetByCarID(ctx context.Context, carID uuid.UUID) ([]models.CarPhoto, error) {
 	query := `
 		SELECT id, car_id, slot_type, file_path, file_url, file_size, mime_type, created_at, updated_at
@@ -333,7 +333,7 @@ func (r *CarPhotoRepository) GetByCarID(ctx context.Context, carID uuid.UUID) ([
 	return photos, nil
 }
 
-// retrieves a specific photo by car ID and slot type
+// GetByCarIDAndSlot retrieves a specific photo by car ID and slot type
 func (r *CarPhotoRepository) GetByCarIDAndSlot(ctx context.Context, carID uuid.UUID, slotType models.PhotoSlotType) (*models.CarPhoto, error) {
 	query := `
 		SELECT id, car_id, slot_type, file_path, file_url, file_size, mime_type, created_at, updated_at
@@ -357,7 +357,7 @@ func (r *CarPhotoRepository) GetByCarIDAndSlot(ctx context.Context, carID uuid.U
 	return &photo, nil
 }
 
-// retrieves a photo by its ID
+// GetByID retrieves a photo by its ID
 func (r *CarPhotoRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.CarPhoto, error) {
 	query := `
 		SELECT id, car_id, slot_type, file_path, file_url, file_size, mime_type, created_at, updated_at
@@ -381,7 +381,7 @@ func (r *CarPhotoRepository) GetByID(ctx context.Context, id uuid.UUID) (*models
 	return &photo, nil
 }
 
-// creates or updates a photo for a specific slot
+// Upsert creates or updates a photo for a specific slot
 func (r *CarPhotoRepository) Upsert(ctx context.Context, photo *models.CarPhoto) error {
 	query := `
 		INSERT INTO car_photos (id, car_id, slot_type, file_path, file_url, file_size, mime_type, created_at, updated_at)
@@ -403,21 +403,21 @@ func (r *CarPhotoRepository) Upsert(ctx context.Context, photo *models.CarPhoto)
 	return err
 }
 
-// deletes a photo by ID
+// Delete deletes a photo by ID
 func (r *CarPhotoRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	query := `DELETE FROM car_photos WHERE id = $1`
 	_, err := r.db.Pool.Exec(ctx, query, id)
 	return err
 }
 
-// deletes all photos for a car
+// DeleteByCarID deletes all photos for a car
 func (r *CarPhotoRepository) DeleteByCarID(ctx context.Context, carID uuid.UUID) error {
 	query := `DELETE FROM car_photos WHERE car_id = $1`
 	_, err := r.db.Pool.Exec(ctx, query, carID)
 	return err
 }
 
-// handles car document database operations
+// CarDocumentRepository handles car document database operations
 type CarDocumentRepository struct {
 	db *database.DB
 }
@@ -426,7 +426,7 @@ func NewCarDocumentRepository(db *database.DB) *CarDocumentRepository {
 	return &CarDocumentRepository{db: db}
 }
 
-// creates a new car document record
+// Create creates a new car document record
 func (r *CarDocumentRepository) Create(ctx context.Context, doc *models.CarDocument) error {
 	query := `
 		INSERT INTO car_documents (id, car_id, document_type, file_name, file_path, file_url, file_size, mime_type, created_at, updated_at)
@@ -441,7 +441,7 @@ func (r *CarDocumentRepository) Create(ctx context.Context, doc *models.CarDocum
 	return err
 }
 
-// retrieves all documents for a car
+// GetByCarID retrieves all documents for a car
 func (r *CarDocumentRepository) GetByCarID(ctx context.Context, carID uuid.UUID) ([]models.CarDocument, error) {
 	query := `
 		SELECT id, car_id, document_type, file_name, file_path, file_url, file_size, mime_type, created_at, updated_at
@@ -472,7 +472,7 @@ func (r *CarDocumentRepository) GetByCarID(ctx context.Context, carID uuid.UUID)
 	return docs, nil
 }
 
-// retrieves a document by its ID
+// GetByID retrieves a document by its ID
 func (r *CarDocumentRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.CarDocument, error) {
 	query := `
 		SELECT id, car_id, document_type, file_name, file_path, file_url, file_size, mime_type, created_at, updated_at
@@ -496,14 +496,14 @@ func (r *CarDocumentRepository) GetByID(ctx context.Context, id uuid.UUID) (*mod
 	return &doc, nil
 }
 
-// deletes a document by ID
+// Delete deletes a document by ID
 func (r *CarDocumentRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	query := `DELETE FROM car_documents WHERE id = $1`
 	_, err := r.db.Pool.Exec(ctx, query, id)
 	return err
 }
 
-// deletes all documents for a car
+// DeleteByCarID deletes all documents for a car
 func (r *CarDocumentRepository) DeleteByCarID(ctx context.Context, carID uuid.UUID) error {
 	query := `DELETE FROM car_documents WHERE car_id = $1`
 	_, err := r.db.Pool.Exec(ctx, query, carID)

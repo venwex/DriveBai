@@ -20,9 +20,9 @@ func NewDocumentRepository(db *database.DB) *DocumentRepository {
 
 func (r *DocumentRepository) Create(ctx context.Context, doc *models.Document) error {
 	query := `
-		insert into documents (id, user_id, type, file_name, file_path, file_size, mimi_type, status)
-		values ($1, $2, $3, $4, $5, $6, $7, $8)
-		returning created_at, updated_at
+		INSERT INTO documents (id, user_id, type, file_name, file_path, file_size, mime_type, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING created_at, updated_at
 	`
 
 	if doc.ID == uuid.Nil {
@@ -41,6 +41,37 @@ func (r *DocumentRepository) Create(ctx context.Context, doc *models.Document) e
 	).Scan(&doc.CreatedAt, &doc.UpdatedAt)
 
 	return err
+}
+
+func (r *DocumentRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Document, error) {
+	query := `
+		SELECT id, user_id, type, file_name, file_path, file_size, mime_type, status, created_at, updated_at
+		FROM documents
+		WHERE id = $1
+	`
+
+	doc := &models.Document{}
+	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
+		&doc.ID,
+		&doc.UserID,
+		&doc.Type,
+		&doc.FileName,
+		&doc.FilePath,
+		&doc.FileSize,
+		&doc.MimeType,
+		&doc.Status,
+		&doc.CreatedAt,
+		&doc.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return doc, nil
 }
 
 func (r *DocumentRepository) GetByUserID(ctx context.Context, userID uuid.UUID) ([]*models.Document, error) {

@@ -8,14 +8,16 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
 	"github.com/stripe/stripe-go/v81/webhook"
 )
 
+// Service wraps Stripe API calls using direct HTTP (no SDK dependency).
 type Service struct {
 	secretKey      string
 	publishableKey string
 	webhookSecret  string
-	feeBPS         int // Комиссия страйпа
+	feeBPS         int // platform fee in basis points
 	logger         *slog.Logger
 	httpClient     *http.Client
 }
@@ -33,10 +35,13 @@ func NewService(secretKey, publishableKey, webhookSecret string, feeBPS int, log
 
 func (s *Service) PublishableKey() string { return s.publishableKey }
 func (s *Service) WebhookSecret() string  { return s.webhookSecret }
+
+// PlatformFee calculates the platform fee in smallest currency unit.
 func (s *Service) PlatformFee(amountCents int64) int64 {
 	return amountCents * int64(s.feeBPS) / 10000
 }
 
+// --- Stripe API types ---
 
 type Customer struct {
 	ID    string `json:"id"`
@@ -56,10 +61,11 @@ type PaymentIntent struct {
 	Currency     string `json:"currency"`
 }
 
+// --- Customer ---
 
-// Находит клиента по почте или создает его
+// FindOrCreateCustomer finds a Stripe customer by email, or creates one.
 func (s *Service) FindOrCreateCustomer(email, name string) (*Customer, error) {
-	// Поиск существующего клиента
+	// Search for existing customer
 	params := url.Values{}
 	params.Set("query", fmt.Sprintf("email:'%s'", email))
 	params.Set("limit", "1")
@@ -76,7 +82,7 @@ func (s *Service) FindOrCreateCustomer(email, name string) (*Customer, error) {
 		}
 	}
 
-	// Создаем нвого клиента
+	// Create new customer
 	params = url.Values{}
 	params.Set("email", email)
 	params.Set("name", name)
@@ -92,8 +98,9 @@ func (s *Service) FindOrCreateCustomer(email, name string) (*Customer, error) {
 	return &cust, nil
 }
 
+// --- Ephemeral Key ---
 
-// Создает эфемерный ключ для PaymentSheet
+// CreateEphemeralKey creates a Stripe ephemeral key for PaymentSheet.
 func (s *Service) CreateEphemeralKey(customerID string) (*EphemeralKey, error) {
 	params := url.Values{}
 	params.Set("customer", customerID)
@@ -124,8 +131,9 @@ func (s *Service) CreateEphemeralKey(customerID string) (*EphemeralKey, error) {
 	return &ek, nil
 }
 
+// --- PaymentIntent ---
 
-// Создает Stripe PaymentIntent для мобильного PaymentSheet
+// CreatePaymentIntent creates a Stripe PaymentIntent for mobile PaymentSheet.
 func (s *Service) CreatePaymentIntent(amountCents int64, currency, customerID string, platformFeeCents int64, idempotencyKey string) (*PaymentIntent, error) {
 	params := url.Values{}
 	params.Set("amount", fmt.Sprintf("%d", amountCents))
@@ -133,7 +141,10 @@ func (s *Service) CreatePaymentIntent(amountCents int64, currency, customerID st
 	params.Set("customer", customerID)
 	params.Set("automatic_payment_methods[enabled]", "true")
 
-// ВАДНО!!! На данный момент платформа собирает полную сумму и записывает комиссию отдельно
+	// TODO: When owner Stripe Connect accounts are implemented, add:
+	// params.Set("application_fee_amount", fmt.Sprintf("%d", platformFeeCents))
+	// params.Set("transfer_data[destination]", ownerStripeAccountID)
+	// For now, platform collects full amount and records fee separately.
 
 	params.Set("metadata[platform_fee_cents]", fmt.Sprintf("%d", platformFeeCents))
 
@@ -165,9 +176,10 @@ func (s *Service) CreatePaymentIntent(amountCents int64, currency, customerID st
 	return &pi, nil
 }
 
+// --- Retrieve PaymentIntent ---
 
-// Извлекает текущее состояние PaymentIntent из Stripe
-// Используется как запасной вариант когда веб перехватчики задерживаются или неправильно настроены
+// RetrievePaymentIntent fetches the current state of a PaymentIntent from Stripe.
+// Used as a fallback when webhooks are delayed or misconfigured.
 func (s *Service) RetrievePaymentIntent(id string) (*PaymentIntent, error) {
 	body, err := s.apiGet("/v1/payment_intents/" + id)
 	if err != nil {
@@ -180,20 +192,24 @@ func (s *Service) RetrievePaymentIntent(id string) (*PaymentIntent, error) {
 	return &pi, nil
 }
 
+// --- Webhook signature verification ---
 
-// Проверяет подпись веб перехватчика через библу Stripe-Go
-// Возвращает проанализированное событие в виде общей карты
+// VerifyWebhookSignature verifies a Stripe webhook signature using the official stripe-go library.
+// Returns the parsed event as a generic map (matches existing handler interface).
 func (s *Service) VerifyWebhookSignature(payload []byte, sigHeader string) (map[string]interface{}, error) {
+	// Use stripe-go's official verification (handles tolerance, multiple v1 sigs, key rotation)
 	event, err := webhook.ConstructEvent(payload, sigHeader, s.webhookSecret)
 	if err != nil {
 		return nil, fmt.Errorf("webhook signature verification: %w", err)
 	}
 
-	// Преобразуем проверенное событие в общую карту для обратной совместимости
+	// Convert the verified event to a generic map for backward compatibility
 	var result map[string]interface{}
 	if err := json.Unmarshal(event.Data.Raw, &result); err != nil {
 		return nil, fmt.Errorf("parse event data: %w", err)
 	}
+
+	// Build the map structure the handler expects: { "type": ..., "data": { "object": ... } }
 	return map[string]interface{}{
 		"type": string(event.Type),
 		"data": map[string]interface{}{
@@ -202,6 +218,7 @@ func (s *Service) VerifyWebhookSignature(payload []byte, sigHeader string) (map[
 	}, nil
 }
 
+// --- HTTP helpers ---
 
 func (s *Service) apiGet(path string) ([]byte, error) {
 	req, err := http.NewRequest("GET", "https://api.stripe.com"+path, nil)

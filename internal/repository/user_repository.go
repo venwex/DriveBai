@@ -12,29 +12,41 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type UserRepository struct{ db *database.DB }
+type UserRepository struct {
+	db *database.DB
+}
 
 func NewUserRepository(db *database.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
 func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
-	if user.ID == uuid.Nil {
-		user.ID = uuid.New()
-	}
-	if user.OnboardingStatus == "" {
-		user.OnboardingStatus = models.OnboardingCreated
-	}
-
 	query := `
 		INSERT INTO users (id, email, password_hash, role, first_name, last_name, phone, is_email_verified, onboarding_status, profile_photo_url)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING created_at, updated_at
 	`
+
+	if user.ID == uuid.Nil {
+		user.ID = uuid.New()
+	}
+
+	// Default onboarding status
+	if user.OnboardingStatus == "" {
+		user.OnboardingStatus = models.OnboardingCreated
+	}
+
 	err := r.db.Pool.QueryRow(ctx, query,
-		user.ID, strings.ToLower(user.Email), user.PasswordHash, user.Role,
-		user.FirstName, user.LastName, user.Phone,
-		user.IsEmailVerified, user.OnboardingStatus, user.ProfilePhotoURL,
+		user.ID,
+		strings.ToLower(user.Email),
+		user.PasswordHash,
+		user.Role,
+		user.FirstName,
+		user.LastName,
+		user.Phone,
+		user.IsEmailVerified,
+		user.OnboardingStatus,
+		user.ProfilePhotoURL,
 	).Scan(&user.CreatedAt, &user.UpdatedAt)
 
 	if err != nil {
@@ -43,51 +55,74 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 		}
 		return err
 	}
+
 	return nil
 }
 
 func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	query := `
-		SELECT id, email, password_hash, role, first_name, last_name, phone,
-		       is_email_verified, onboarding_status, profile_photo_url, created_at, updated_at
-		FROM users WHERE id = $1
+		SELECT id, email, password_hash, role, first_name, last_name, phone, is_email_verified, onboarding_status, profile_photo_url, created_at, updated_at
+		FROM users
+		WHERE id = $1
 	`
-	u := &models.User{}
+
+	user := &models.User{}
 	err := r.db.Pool.QueryRow(ctx, query, id).Scan(
-		&u.ID, &u.Email, &u.PasswordHash, &u.Role,
-		&u.FirstName, &u.LastName, &u.Phone,
-		&u.IsEmailVerified, &u.OnboardingStatus, &u.ProfilePhotoURL,
-		&u.CreatedAt, &u.UpdatedAt,
+		&user.ID,
+		&user.Email,
+		&user.PasswordHash,
+		&user.Role,
+		&user.FirstName,
+		&user.LastName,
+		&user.Phone,
+		&user.IsEmailVerified,
+		&user.OnboardingStatus,
+		&user.ProfilePhotoURL,
+		&user.CreatedAt,
+		&user.UpdatedAt,
 	)
+
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, models.ErrUserNotFound
 		}
 		return nil, err
 	}
-	return u, nil
+
+	return user, nil
 }
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
 	query := `
-		SELECT id, email, password_hash, role, first_name, last_name, phone,
-		       is_email_verified, onboarding_status, profile_photo_url, created_at, updated_at
-		FROM users WHERE email = $1
+		SELECT id, email, password_hash, role, first_name, last_name, phone, is_email_verified, onboarding_status, profile_photo_url, created_at, updated_at
+		FROM users
+		WHERE email = $1
 	`
-	u := &models.User{}
+
+	user := &models.User{}
 	err := r.db.Pool.QueryRow(ctx, query, strings.ToLower(email)).Scan(
-		&u.ID, &u.Email, &u.PasswordHash, &u.Role,
-		&u.FirstName, &u.LastName, &u.Phone,
-		&u.IsEmailVerified, &u.OnboardingStatus, &u.ProfilePhotoURL,
-		&u.CreatedAt, &u.UpdatedAt,
+		&user.ID,
+		&user.Email,
+		&user.PasswordHash,
+		&user.Role,
+		&user.FirstName,
+		&user.LastName,
+		&user.Phone,
+		&user.IsEmailVerified,
+		&user.OnboardingStatus,
+		&user.ProfilePhotoURL,
+		&user.CreatedAt,
+		&user.UpdatedAt,
 	)
+
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, models.ErrUserNotFound
 		}
 		return nil, err
 	}
-	return u, nil
+
+	return user, nil
 }
 
 func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
@@ -145,30 +180,101 @@ func (r *UserRepository) UpdateRole(ctx context.Context, userID uuid.UUID, role 
 	return nil
 }
 
+func (r *UserRepository) UpdateOnboardingStatus(ctx context.Context, userID uuid.UUID, status models.OnboardingStatus) error {
+	query := `UPDATE users SET onboarding_status = $2, updated_at = NOW() WHERE id = $1`
+	result, err := r.db.Pool.Exec(ctx, query, userID, status)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return models.ErrUserNotFound
+	}
+	return nil
+}
+
+func (r *UserRepository) UpdateProfilePhoto(ctx context.Context, userID uuid.UUID, photoURL string) error {
+	query := `UPDATE users SET profile_photo_url = $2, updated_at = NOW() WHERE id = $1`
+	result, err := r.db.Pool.Exec(ctx, query, userID, photoURL)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return models.ErrUserNotFound
+	}
+	return nil
+}
+
 func (r *UserRepository) EmailExists(ctx context.Context, email string) (bool, error) {
+	query := `SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)`
 	var exists bool
-	err := r.db.Pool.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)`,
-		strings.ToLower(email),
-	).Scan(&exists)
+	err := r.db.Pool.QueryRow(ctx, query, strings.ToLower(email)).Scan(&exists)
 	return exists, err
 }
 
-// OTP rate-limit helpers
+// OTP Rate Limiting
 
-func (r *UserRepository) GetOTPSendCount(ctx context.Context, key string, since time.Time) (int, error) {
+func (r *UserRepository) GetOTPSendCount(ctx context.Context, email string, since time.Time) (int, error) {
+	query := `SELECT COUNT(*) FROM otp_rate_limits WHERE email = $1 AND created_at > $2`
 	var count int
-	err := r.db.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM otp_rate_limits WHERE email = $1 AND created_at > $2`,
-		strings.ToLower(key), since,
-	).Scan(&count)
+	err := r.db.Pool.QueryRow(ctx, query, strings.ToLower(email), since).Scan(&count)
 	return count, err
 }
 
-func (r *UserRepository) RecordOTPSend(ctx context.Context, key, ip string) error {
-	_, err := r.db.Pool.Exec(ctx,
-		`INSERT INTO otp_rate_limits (email, ip_address) VALUES ($1, $2)`,
-		strings.ToLower(key), ip,
-	)
+func (r *UserRepository) RecordOTPSend(ctx context.Context, email, ipAddress string) error {
+	query := `INSERT INTO otp_rate_limits (email, ip_address) VALUES ($1, $2)`
+	_, err := r.db.Pool.Exec(ctx, query, strings.ToLower(email), ipAddress)
 	return err
+}
+
+func (r *UserRepository) CleanupOldRateLimits(ctx context.Context, before time.Time) error {
+	query := `DELETE FROM otp_rate_limits WHERE created_at < $1`
+	_, err := r.db.Pool.Exec(ctx, query, before)
+	return err
+}
+
+// GetLastSeenActionsAt returns when the user last viewed their Today actions.
+func (r *UserRepository) GetLastSeenActionsAt(ctx context.Context, userID uuid.UUID) (time.Time, error) {
+	var t time.Time
+	err := r.db.Pool.QueryRow(ctx, `SELECT last_seen_actions_at FROM users WHERE id = $1`, userID).Scan(&t)
+	return t, err
+}
+
+// UpdateLastSeenActionsAt sets last_seen_actions_at to now.
+func (r *UserRepository) UpdateLastSeenActionsAt(ctx context.Context, userID uuid.UUID) error {
+	_, err := r.db.Pool.Exec(ctx, `UPDATE users SET last_seen_actions_at = NOW() WHERE id = $1`, userID)
+	return err
+}
+
+// GetActiveProfileID returns the user's currently-active mode profile ID, or
+// nil if none has been assigned yet (e.g. legacy users before the migration
+// was backfilled).
+func (r *UserRepository) GetActiveProfileID(ctx context.Context, userID uuid.UUID) (*uuid.UUID, error) {
+	var id *uuid.UUID
+	err := r.db.Pool.QueryRow(ctx, `SELECT active_profile_id FROM users WHERE id = $1`, userID).Scan(&id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, models.ErrUserNotFound
+		}
+		return nil, err
+	}
+	return id, nil
+}
+
+// SetActiveProfile atomically sets users.active_profile_id and mirrors the
+// profile's role into users.role. The mirrored column is kept in sync during
+// the transitional period until users.role is dropped (see migration 000013).
+func (r *UserRepository) SetActiveProfile(ctx context.Context, userID uuid.UUID, profileID uuid.UUID, role models.Role) error {
+	query := `
+		UPDATE users
+		SET active_profile_id = $2, role = $3, updated_at = NOW()
+		WHERE id = $1
+	`
+	result, err := r.db.Pool.Exec(ctx, query, userID, profileID, role)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() == 0 {
+		return models.ErrUserNotFound
+	}
+	return nil
 }

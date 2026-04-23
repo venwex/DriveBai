@@ -3,6 +3,7 @@ package email
 import (
 	"fmt"
 	"log/slog"
+
 	"github.com/sendgrid/sendgrid-go"
 	"github.com/sendgrid/sendgrid-go/helpers/mail"
 )
@@ -27,13 +28,13 @@ type ConsoleSender struct {
 	logger         *slog.Logger
 }
 
-// Функция создает соответствующего отправителя электронной почты на основе конфига
-// Когда apiKey пустой он возвращается к отправителю консоли
-// deeplinkScheme должна быть схемой URL адреса приложения
-// baseURL это базовый URL адрес API используемый для резервных веб ссылок
+// NewSender creates the appropriate email sender based on configuration.
+// When apiKey is empty, it falls back to console sender (for development).
+// deeplinkScheme should be the app's URL scheme (e.g., "drivebai").
+// baseURL is the API base URL used for web fallback links.
 func NewSender(apiKey, fromEmail, fromName, deeplinkScheme, baseURL string, logger *slog.Logger) Sender {
 	if apiKey == "" {
-		logger.Warn("SENDGRID_API_KEY not set using console sender (emails will be logged to console)")
+		logger.Warn("SENDGRID_API_KEY not set, using console sender (emails will be logged to console)")
 		return &ConsoleSender{
 			deeplinkScheme: deeplinkScheme,
 			baseURL:        baseURL,
@@ -41,7 +42,7 @@ func NewSender(apiKey, fromEmail, fromName, deeplinkScheme, baseURL string, logg
 		}
 	}
 
-	// Проверяем конфигурацию когда сендгрид включен
+	// Validate configuration when SendGrid is enabled
 	if fromEmail == "" {
 		logger.Error("SENDGRID_FROM_EMAIL is required when SENDGRID_API_KEY is set")
 		logger.Warn("Falling back to console sender due to missing configuration")
@@ -68,8 +69,8 @@ func NewSender(apiKey, fromEmail, fromName, deeplinkScheme, baseURL string, logg
 	}
 }
 
-// Фцункция возвращает отредактированную версию токена для входа в производство
-// Показывает первые 6 символов за которыми следует .... чтобы не палить полны1 токен
+// redactToken returns a redacted version of the token for logging in production.
+// Shows first 6 characters followed by "..." to avoid exposing full tokens.
 func redactToken(token string) string {
 	if len(token) <= 6 {
 		return "***"
@@ -77,7 +78,7 @@ func redactToken(token string) string {
 	return token[:6] + "..."
 }
 
-// Имплиментация
+// SendGrid implementation
 
 func (s *SendGridSender) SendVerificationEmail(toEmail, toName, code string) error {
 	from := mail.NewEmail(s.fromName, s.fromEmail)
@@ -154,9 +155,9 @@ func (s *SendGridSender) SendPasswordResetEmail(toEmail, toName, token string) e
 	to := mail.NewEmail(toName, toEmail)
 	subject := "Reset your DriveBai password"
 
-	// Создаем URL глубокой ссылки,используя настраиваемую схему
+	// Build deep link URL using configurable scheme
 	resetLink := fmt.Sprintf("%s://reset-password?token=%s", s.deeplinkScheme, token)
-	// Резервная ссылка для браузеров
+	// Web fallback link for browsers/desktop
 	webLink := fmt.Sprintf("%s/reset-password?token=%s", s.baseURL, token)
 
 	plainTextContent := fmt.Sprintf(`Hello %s,
@@ -236,6 +237,7 @@ The DriveBai Team`, toName, resetLink, webLink)
 		return fmt.Errorf("sendgrid error: status %d - %s", response.StatusCode, response.Body)
 	}
 
+	// Log success with redacted token for security
 	s.logger.Info("password reset email sent successfully",
 		"to", toEmail,
 		"status", response.StatusCode,
@@ -244,7 +246,7 @@ The DriveBai Team`, toName, resetLink, webLink)
 	return nil
 }
 
-// Чисто для режима разработки
+// Console implementation (for development)
 
 func (c *ConsoleSender) SendVerificationEmail(toEmail, toName, code string) error {
 	c.logger.Info("VERIFICATION EMAIL (dev mode)",
@@ -254,7 +256,7 @@ func (c *ConsoleSender) SendVerificationEmail(toEmail, toName, code string) erro
 	)
 	fmt.Printf("\n"+
 		"╔════════════════════════════════════════════════════════════╗\n"+
-		"║  VERIFICATION EMAIL (SendGrid not configured)           ║\n"+
+		"║  📧 VERIFICATION EMAIL (SendGrid not configured)           ║\n"+
 		"╠════════════════════════════════════════════════════════════╣\n"+
 		"║  To: %-52s ║\n"+
 		"║  Name: %-50s ║\n"+
@@ -265,7 +267,7 @@ func (c *ConsoleSender) SendVerificationEmail(toEmail, toName, code string) erro
 }
 
 func (c *ConsoleSender) SendPasswordResetEmail(toEmail, toName, token string) error {
-	// Создаем URL глубокой ссылки используя настраиваемую схему
+	// Build deep link URL using configurable scheme
 	resetLink := fmt.Sprintf("%s://reset-password?token=%s", c.deeplinkScheme, token)
 	webLink := fmt.Sprintf("%s/reset-password?token=%s", c.baseURL, token)
 
@@ -278,7 +280,7 @@ func (c *ConsoleSender) SendPasswordResetEmail(toEmail, toName, token string) er
 	)
 	fmt.Printf("\n"+
 		"╔══════════════════════════════════════════════════════════════════════════════╗\n"+
-		"║  PASSWORD RESET EMAIL (SendGrid not configured)                           ║\n"+
+		"║  📧 PASSWORD RESET EMAIL (SendGrid not configured)                           ║\n"+
 		"╠══════════════════════════════════════════════════════════════════════════════╣\n"+
 		"║  To: %-72s ║\n"+
 		"║  Name: %-70s ║\n"+

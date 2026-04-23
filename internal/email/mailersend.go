@@ -4,19 +4,26 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 )
 
 const mailerSendAPIURL = "https://api.mailersend.com/v1/email"
 
-// Кароче это минимальный интерфейс для отправки электронных писем для входа в систему OTP
-// Он намеренно отделен от существующего интерфейса Sender, поэтому доставка OTP может использовать MailerSend независимо от SendGrid
-type OTPSender interface {
-	SendLoginOTP(toEmail, code string) error
+// OTPSendResult holds the outcome of an OTP email send attempt.
+type OTPSendResult struct {
+	MessageID string // MailerSend X-Message-Id (empty for console sender)
 }
 
-// Он отправляет электронные письма OTP через REST API MailerSend
+// OTPSender is the minimal interface for sending OTP login emails.
+// It is intentionally separate from the existing Sender interface so
+// that OTP delivery can use MailerSend independently of SendGrid.
+type OTPSender interface {
+	SendLoginOTP(toEmail, code string) (*OTPSendResult, error)
+}
+
+// MailerSendOTPSender sends OTP emails via the MailerSend REST API.
 type MailerSendOTPSender struct {
 	apiKey    string
 	fromEmail string
@@ -25,15 +32,15 @@ type MailerSendOTPSender struct {
 	logger    *slog.Logger
 }
 
-// Он выводит OTP на стандартный вывод
+// ConsoleOTPSender prints OTP to stdout (used when MAILERSEND_API_KEY is unset).
 type ConsoleOTPSender struct {
 	logger *slog.Logger
 }
 
-// Функция создает OTPSender. Возвращается к выводу консоли когда apiKey пуст будет
+// NewOTPSender creates an OTPSender. Falls back to console output when apiKey is empty.
 func NewOTPSender(apiKey, fromEmail, fromName string, logger *slog.Logger) OTPSender {
 	if apiKey == "" {
-		logger.Warn("MAILERSEND_API_KEY not set so OTP emails will be printed to console")
+		logger.Warn("MAILERSEND_API_KEY not set — OTP emails will be printed to console")
 		return &ConsoleOTPSender{logger: logger}
 	}
 	logger.Info("MailerSend OTP sender configured", "from_email", fromEmail)
@@ -46,7 +53,7 @@ func NewOTPSender(apiKey, fromEmail, fromName string, logger *slog.Logger) OTPSe
 	}
 }
 
-// mailerSendPayload отражает тело запроса MailerSend /v1/email.
+// mailerSendPayload mirrors the MailerSend /v1/email request body.
 type mailerSendPayload struct {
 	From    mailerSendAddress   `json:"from"`
 	To      []mailerSendAddress `json:"to"`
@@ -60,7 +67,7 @@ type mailerSendAddress struct {
 	Name  string `json:"name,omitempty"`
 }
 
-func (s *MailerSendOTPSender) SendLoginOTP(toEmail, code string) error {
+func (s *MailerSendOTPSender) SendLoginOTP(toEmail, code string) (*OTPSendResult, error) {
 	plainText := fmt.Sprintf(
 		"Your DrivaBai login code is: %s\n\nThis code expires in 10 minutes.\n\nIf you did not request this, you can safely ignore this email.\n\nThe DrivaBai Team",
 		code,
@@ -97,12 +104,12 @@ func (s *MailerSendOTPSender) SendLoginOTP(toEmail, code string) error {
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("mailersend: marshal payload: %w", err)
+		return nil, fmt.Errorf("mailersend: marshal payload: %w", err)
 	}
 
 	req, err := http.NewRequest(http.MethodPost, mailerSendAPIURL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("mailersend: build request: %w", err)
+		return nil, fmt.Errorf("mailersend: build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -110,22 +117,35 @@ func (s *MailerSendOTPSender) SendLoginOTP(toEmail, code string) error {
 	resp, err := s.client.Do(req)
 	if err != nil {
 		s.logger.Error("mailersend: request failed", "error", err, "to", toEmail)
-		return fmt.Errorf("mailersend: send request: %w", err)
+		return nil, fmt.Errorf("mailersend: send request: %w", err)
 	}
 	defer resp.Body.Close()
 
+	// Read response body for diagnostics
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+
 	if resp.StatusCode >= 400 {
-		s.logger.Error("mailersend: non-2xx response", "status", resp.StatusCode, "to", toEmail)
-		return fmt.Errorf("mailersend: API returned status %d", resp.StatusCode)
+		s.logger.Error("mailersend: API rejected email",
+			"status", resp.StatusCode,
+			"to", toEmail,
+			"response", string(respBody),
+		)
+		return nil, fmt.Errorf("mailersend: API returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	s.logger.Info("OTP email sent via MailerSend", "to", toEmail, "status", resp.StatusCode)
-	return nil
+	// MailerSend returns X-Message-Id on 202 Accepted
+	messageID := resp.Header.Get("X-Message-Id")
+	s.logger.Info("OTP email accepted by MailerSend",
+		"to", toEmail,
+		"status", resp.StatusCode,
+		"message_id", messageID,
+	)
+	return &OTPSendResult{MessageID: messageID}, nil
 }
 
-func (s *ConsoleOTPSender) SendLoginOTP(toEmail, code string) error {
-	// VAZHNOOO. Регистрация кода OTP предусмотрена только в режиме разработки
-	// В производстве всегда используется MailerSendOTPSender который никогда не регистрирует код
+func (s *ConsoleOTPSender) SendLoginOTP(toEmail, code string) (*OTPSendResult, error) {
+	// NOTE: logging OTP code is intentional in dev/console mode only.
+	// Production always uses MailerSendOTPSender which never logs the code.
 	s.logger.Info("OTP EMAIL (dev mode — MailerSend not configured)",
 		"to", toEmail,
 	)
@@ -137,5 +157,5 @@ func (s *ConsoleOTPSender) SendLoginOTP(toEmail, code string) error {
 		"║  Code: %-50s ║\n"+
 		"╚══════════════════════════════════════════════════════════╝\n\n",
 		toEmail, code)
-	return nil
+	return &OTPSendResult{}, nil
 }

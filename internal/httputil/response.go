@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 )
 
+// Response types
+
 type ErrorResponse struct {
 	Error *models.APIError `json:"error"`
 }
@@ -18,10 +20,18 @@ type SuccessResponse struct {
 	Data    interface{} `json:"data,omitempty"`
 }
 
+// Response helpers
+
 func WriteJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+func WriteError(w http.ResponseWriter, status int, apiErr *models.APIError) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(ErrorResponse{Error: apiErr})
 }
 
 func WriteSuccess(w http.ResponseWriter, status int, message string, data interface{}) {
@@ -32,11 +42,11 @@ func WriteSuccess(w http.ResponseWriter, status int, message string, data interf
 	WriteJSON(w, status, response)
 }
 
-func WriteError(w http.ResponseWriter, status int, apiErr *models.APIError) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(ErrorResponse{Error: apiErr})
+func DecodeJSON(r *http.Request, v interface{}) error {
+	return json.NewDecoder(r.Body).Decode(v)
 }
+
+// Context key type and constants (shared between middleware and handlers)
 
 type ContextKey string
 
@@ -47,6 +57,7 @@ const (
 )
 
 // Context helpers
+
 func GetUserID(ctx context.Context) (uuid.UUID, bool) {
 	userID, ok := ctx.Value(UserIDKey).(uuid.UUID)
 	return userID, ok

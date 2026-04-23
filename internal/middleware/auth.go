@@ -1,41 +1,48 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
 	"github.com/drivebai/backend/internal/auth"
-	"github.com/drivebai/backend/internal/handlers"
 	"github.com/drivebai/backend/internal/httputil"
 	"github.com/drivebai/backend/internal/models"
 )
 
-func AuthMiddleware(jwtSvc *auth.JWTService) func(http.Handler) http.Handler {
+// AuthMiddleware creates authentication middleware
+func AuthMiddleware(jwtService *auth.JWTService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			header := r.Header.Get("Authorization")
-			if header == "" {
-				handlers.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				httputil.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
 				return
 			}
 
-			parts := strings.SplitN(header, " ", 2)
+			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-				handlers.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
+				httputil.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
 				return
 			}
 
-			claims, err := jwtSvc.ValidateAccessToken(parts[1])
+			tokenString := parts[1]
+			claims, err := jwtService.ValidateAccessToken(tokenString)
 			if err != nil {
 				if apiErr := models.GetAPIError(err); apiErr != nil {
-					handlers.WriteError(w, http.StatusUnauthorized, apiErr)
+					httputil.WriteError(w, http.StatusUnauthorized, apiErr)
 				} else {
-					handlers.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
+					httputil.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
 				}
 				return
 			}
 
-			ctx := handlers.SetAuthContext(r.Context(), claims.UserID, claims.Email, claims.Role)
+			// Add user info to context
+			ctx := r.Context()
+			ctx = context.WithValue(ctx, httputil.UserIDKey, claims.UserID)
+			ctx = context.WithValue(ctx, httputil.EmailKey, claims.Email)
+			ctx = context.WithValue(ctx, httputil.RoleKey, claims.Role)
+
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -45,7 +52,6 @@ func AuthMiddleware(jwtSvc *auth.JWTService) func(http.Handler) http.Handler {
 func RequireRole(roles ...models.Role) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{})
 			userRole, ok := httputil.GetRole(r.Context())
 			if !ok {
 				httputil.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)

@@ -6,7 +6,7 @@ import (
 
 const bcryptCost = 12
 
-// Генерирует хеш пароль в виде открытого текста с использованием алгоритма bcrypt
+// HashPassword hashes a plaintext password using bcrypt
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost)
 	if err != nil {
@@ -15,7 +15,7 @@ func HashPassword(password string) (string, error) {
 	return string(bytes), nil
 }
 
-// Сравниваем пароль в виде открытого текста с хешем
+// CheckPassword compares a plaintext password with a hash
 func CheckPassword(password, hash string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	return err == nil

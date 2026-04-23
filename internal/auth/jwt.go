@@ -5,21 +5,16 @@ import (
 	"encoding/hex"
 	"errors"
 	"time"
+
 	"github.com/drivebai/backend/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
-const (
-	registrationTokenTTL = 15 * time.Minute
-	registrationPurpose  = "otp_registration"
-	tokenIssuer          = "drivebai"
-)
-
 type JWTService struct {
-	secret          []byte
-	accessTokenTTL  time.Duration
-	refreshTokenTTL time.Duration
+	secret           []byte
+	accessTokenTTL   time.Duration
+	refreshTokenTTL  time.Duration
 }
 
 type AccessTokenClaims struct {
@@ -44,8 +39,7 @@ func NewJWTService(secret string, accessTTL, refreshTTL time.Duration) *JWTServi
 }
 
 func (s *JWTService) GenerateAccessToken(user *models.User) (string, time.Time, error) {
-	now := time.Now()
-	expiresAt := now.Add(s.accessTokenTTL)
+	expiresAt := time.Now().Add(s.accessTokenTTL)
 
 	claims := AccessTokenClaims{
 		UserID: user.ID,
@@ -53,9 +47,9 @@ func (s *JWTService) GenerateAccessToken(user *models.User) (string, time.Time, 
 		Role:   user.Role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			Issuer:    tokenIssuer,
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+			Issuer:    "drivebai",
 			Subject:   user.ID.String(),
 		},
 	}
@@ -70,8 +64,18 @@ func (s *JWTService) GenerateAccessToken(user *models.User) (string, time.Time, 
 }
 
 func (s *JWTService) GenerateRefreshToken() (string, string, time.Time, error) {
+	// Generate a random token
+	tokenBytes := make([]byte, 32)
+	tokenID := uuid.New()
+	copy(tokenBytes, tokenID[:])
+
+	// Create a unique token string
 	rawToken := uuid.New().String() + "-" + uuid.New().String()
-	hashedToken := s.HashRefreshToken(rawToken)
+
+	// Hash the token for storage
+	hash := sha256.Sum256([]byte(rawToken))
+	hashedToken := hex.EncodeToString(hash[:])
+
 	expiresAt := time.Now().Add(s.refreshTokenTTL)
 
 	return rawToken, hashedToken, expiresAt, nil
@@ -109,6 +113,40 @@ func (s *JWTService) GetRefreshTokenTTL() time.Duration {
 	return s.refreshTokenTTL
 }
 
+// GeneratePasswordResetToken creates a secure token for password reset
+// Returns: raw token (to send to user), hashed token (to store), expiry time
+func GeneratePasswordResetToken(ttl time.Duration) (string, string, time.Time, error) {
+	// Create a unique token string
+	rawToken := uuid.New().String() + "-" + uuid.New().String()
+
+	// Hash the token for storage
+	hash := sha256.Sum256([]byte(rawToken))
+	hashedToken := hex.EncodeToString(hash[:])
+
+	expiresAt := time.Now().Add(ttl)
+
+	return rawToken, hashedToken, expiresAt, nil
+}
+
+// HashPasswordResetToken hashes a password reset token for lookup
+func HashPasswordResetToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
+}
+
+// RegistrationClaims are embedded in a short-lived registration token.
+// It proves that the given email address was OTP-verified and allows the
+// iOS client to complete account creation without re-verifying.
+type RegistrationClaims struct {
+	Email   string `json:"email"`
+	Purpose string `json:"purpose"` // always "otp_registration"
+	jwt.RegisteredClaims
+}
+
+const registrationTokenTTL = 15 * time.Minute
+const registrationPurpose = "otp_registration"
+
+// GenerateRegistrationToken issues a short-lived JWT proving email OTP was verified.
 func (s *JWTService) GenerateRegistrationToken(email string) (string, error) {
 	expiresAt := time.Now().Add(registrationTokenTTL)
 
@@ -118,7 +156,7 @@ func (s *JWTService) GenerateRegistrationToken(email string) (string, error) {
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
-			Issuer:    tokenIssuer,
+			Issuer:    "drivebai",
 		},
 	}
 
@@ -126,6 +164,7 @@ func (s *JWTService) GenerateRegistrationToken(email string) (string, error) {
 	return token.SignedString(s.secret)
 }
 
+// ValidateRegistrationToken validates a registration token and returns the verified email.
 func (s *JWTService) ValidateRegistrationToken(tokenString string) (string, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &RegistrationClaims{}, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -147,28 +186,4 @@ func (s *JWTService) ValidateRegistrationToken(tokenString string) (string, erro
 	}
 
 	return claims.Email, nil
-}
-
-// Заявки на регистрацию встроены в наш краткосрочный токен
-// Он будет подтверждать что указанный адрес почты был подтвержден с помощью OTP, и позволяет айосеру завершить создание учетной записи без повторной проверки
-type RegistrationClaims struct {
-	Email   string `json:"email"`
-	Purpose string `json:"purpose"`
-	jwt.RegisteredClaims
-}
-
-// Он создаёт безопасный токен для сброса пароля
-// Возвращает исходный токен для отправки пользователю, хешированный токен для хранения ну и срок действия
-func GeneratePasswordResetToken(ttl time.Duration) (string, string, time.Time, error) {
-	rawToken := uuid.New().String() + "-" + uuid.New().String()
-	hashedToken := HashPasswordResetToken(rawToken)
-	expiresAt := time.Now().Add(ttl)
-
-	return rawToken, hashedToken, expiresAt, nil
-}
-
-// Функция выполняет хеширование токена сброса пароля для последующего поиска
-func HashPasswordResetToken(token string) string {
-	hash := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(hash[:])
 }
