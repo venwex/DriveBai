@@ -211,13 +211,17 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
+	var clientMsgID *uuid.UUID
+	if body.ClientMessageID != uuid.Nil {
+		clientMsgID = &body.ClientMessageID
+	}
 	msg := &models.Message{
 		ID:              uuid.New(),
 		ChatID:          chatID,
 		SenderID:        userID,
 		Type:            models.MessageTypeText,
 		Body:            body.Body,
-		ClientMessageID: &body.ClientMessageID,
+		ClientMessageID: clientMsgID,
 		CreatedAt:       now,
 	}
 
