@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/drivebai/backend/internal/httputil"
@@ -72,6 +73,48 @@ func (h *CarHandler) ListCars(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"cars": responses,
 	})
+}
+
+// GetCar returns a specific car by ID
+func (h *CarHandler) GetCar(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := httputil.GetUserID(ctx)
+	if !ok {
+		httputil.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
+		return
+	}
+
+	carIDStr := chi.URLParam(r, "carId")
+	carID, err := uuid.Parse(carIDStr)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, models.NewValidationError("Invalid car ID"))
+		return
+	}
+
+	car, err := h.carRepo.GetByID(ctx, carID)
+	if err != nil {
+		slog.Error("failed to get car", "error", err, "car_id", carID)
+		httputil.WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
+		return
+	}
+
+	if car == nil {
+		httputil.WriteError(w, http.StatusNotFound, models.NewAPIError("NOT_FOUND", "Car not found"))
+		return
+	}
+
+	// Verify ownership
+	if car.OwnerID != userID {
+		httputil.WriteError(w, http.StatusForbidden, models.NewAPIError("FORBIDDEN", "You do not own this car"))
+		return
+	}
+
+	// Get photos, documents, and owner info
+	photos, _ := h.photoRepo.GetByCarID(ctx, car.ID)
+	documents, _ := h.docRepo.GetByCarID(ctx, car.ID)
+	owner, _ := h.userRepo.GetByID(ctx, userID)
+
+	httputil.WriteJSON(w, http.StatusOK, car.ToResponse(photos, documents, owner))
 }
 
 func (h *CarHandler) CreateCar(w http.ResponseWriter, r *http.Request) {
@@ -294,6 +337,110 @@ func (h *CarHandler) UpdateCar(w http.ResponseWriter, r *http.Request) {
 	owner, _ := h.userRepo.GetByID(ctx, userID)
 
 	slog.Info("car updated", "car_id", car.ID, "user_id", userID)
+	httputil.WriteJSON(w, http.StatusOK, car.ToResponse(photos, documents, owner))
+}
+
+// DeleteCar deletes a car listing
+func (h *CarHandler) DeleteCar(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := httputil.GetUserID(ctx)
+	if !ok {
+		httputil.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
+		return
+	}
+
+	carIDStr := chi.URLParam(r, "carId")
+	carID, err := uuid.Parse(carIDStr)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, models.NewValidationError("Invalid car ID"))
+		return
+	}
+
+	// Get existing car
+	car, err := h.carRepo.GetByID(ctx, carID)
+	if err != nil || car == nil {
+		httputil.WriteError(w, http.StatusNotFound, models.NewAPIError("NOT_FOUND", "Car not found"))
+		return
+	}
+
+	// Verify ownership
+	if car.OwnerID != userID {
+		httputil.WriteError(w, http.StatusForbidden, models.NewAPIError("FORBIDDEN", "You do not own this car"))
+		return
+	}
+
+	// Delete photos from disk
+	photos, _ := h.photoRepo.GetByCarID(ctx, carID)
+	for _, photo := range photos {
+		os.Remove(photo.FilePath)
+	}
+
+	// Delete documents from disk
+	documents, _ := h.docRepo.GetByCarID(ctx, carID)
+	for _, doc := range documents {
+		os.Remove(doc.FilePath)
+	}
+
+	// Delete car (cascades to photos and documents)
+	if err := h.carRepo.Delete(ctx, carID); err != nil {
+		slog.Error("failed to delete car", "error", err, "car_id", carID)
+		httputil.WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
+		return
+	}
+
+	slog.Info("car deleted", "car_id", carID, "user_id", userID)
+	httputil.WriteSuccess(w, http.StatusOK, "Car deleted successfully", nil)
+}
+
+// PauseCar toggles the paused state of a car
+func (h *CarHandler) PauseCar(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, ok := httputil.GetUserID(ctx)
+	if !ok {
+		httputil.WriteError(w, http.StatusUnauthorized, models.ErrUnauthorized)
+		return
+	}
+
+	carIDStr := chi.URLParam(r, "carId")
+	carID, err := uuid.Parse(carIDStr)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, models.NewValidationError("Invalid car ID"))
+		return
+	}
+
+	// Get existing car
+	car, err := h.carRepo.GetByID(ctx, carID)
+	if err != nil || car == nil {
+		httputil.WriteError(w, http.StatusNotFound, models.NewAPIError("NOT_FOUND", "Car not found"))
+		return
+	}
+
+	// Verify ownership
+	if car.OwnerID != userID {
+		httputil.WriteError(w, http.StatusForbidden, models.NewAPIError("FORBIDDEN", "You do not own this car"))
+		return
+	}
+
+	// Toggle pause state
+	newIsPaused := !car.IsPaused
+	newStatus := models.CarStatusAvailable
+	if newIsPaused {
+		newStatus = models.CarStatusPaused
+	}
+
+	if err := h.carRepo.UpdateStatus(ctx, carID, newStatus, newIsPaused); err != nil {
+		slog.Error("failed to pause car", "error", err, "car_id", carID)
+		httputil.WriteError(w, http.StatusInternalServerError, models.ErrInternalError)
+		return
+	}
+
+	// Get updated car
+	car, _ = h.carRepo.GetByID(ctx, carID)
+	photos, _ := h.photoRepo.GetByCarID(ctx, car.ID)
+	documents, _ := h.docRepo.GetByCarID(ctx, car.ID)
+	owner, _ := h.userRepo.GetByID(ctx, userID)
+
+	slog.Info("car paused toggled", "car_id", carID, "is_paused", newIsPaused)
 	httputil.WriteJSON(w, http.StatusOK, car.ToResponse(photos, documents, owner))
 }
 

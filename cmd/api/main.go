@@ -113,10 +113,16 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.AuthMiddleware(jwtSvc))
 			r.Get("/me", userHandler.GetCurrentUser)
+			r.Patch("/profile", userHandler.UpdateProfile)
 
 			r.Route("/cars", func(r chi.Router) {
+				r.Get("/", carHandler.ListCars)
 				r.Post("/", carHandler.CreateCar)
+				r.Get("/{carId}", carHandler.GetCar)
 				r.Put("/{carId}", carHandler.UpdateCar)
+				r.Delete("/{carId}", carHandler.DeleteCar)
+				r.Post("/{carId}/pause", carHandler.PauseCar)
+				//r.Put("/{carId}/location", carHandler.UpdateCarLocation) надо доработать я забыл
 			})
 
 			r.Get("/me/likes", likesHandler.GetLikedListings)
