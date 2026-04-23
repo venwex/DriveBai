@@ -1,0 +1,2449 @@
+{
+  "info": {
+    "name": "DriveBai API \u2014 Full Demo",
+    "description": "End-to-end demo of the DriveBai backend. Run the requests in order inside each folder. IDs and tokens are captured automatically via test scripts. Pre-request hook at collection level auto-generates unique demo emails on first run. See demo/README.md for the live-demo narration script.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "drivebai-demo-collection-0001"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-generate unique demo emails once per environment",
+          "if (!pm.environment.get('ownerEmail')) {",
+          "  const ts = Math.floor(Date.now()/1000);",
+          "  pm.environment.set('ownerEmail', `demo-owner-${ts}@drivebai.local`);",
+          "  pm.environment.set('driverEmail', `demo-driver-${ts}@drivebai.local`);",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [],
+  "item": [
+    {
+      "name": "01 \u00b7 Health & Setup",
+      "description": "Confirm the API is up before starting the demo.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Confirms the API is up and the database is reachable. Expect 200 'ok'."
+          },
+          "response": []
+        },
+        {
+          "name": "OpenAPI Spec",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/openapi",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "openapi"
+              ]
+            },
+            "description": "Returns the OpenAPI YAML spec. Use for quick reference or import into any OpenAPI tool."
+          },
+          "response": []
+        },
+        {
+          "name": "Swagger UI (HTML)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/docs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "docs"
+              ]
+            },
+            "description": "Serves the Swagger UI at /docs \u2014 open in a browser to explore the spec interactively."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 \u00b7 Auth \u2014 Classic",
+      "description": "Classic email+password registration, login, and refresh. No email verification step is required \u2014 the backend auto-verifies on register.",
+      "item": [
+        {
+          "name": "Register Owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Register as a car owner. Server returns JWT pair immediately (no email verification needed). Token is saved to `accessTokenOwner`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmail}}\",\n  \"password\": \"{{ownerPassword}}\",\n  \"first_name\": \"Olga\",\n  \"last_name\": \"Owner\",\n  \"phone\": \"+77000000001\",\n  \"role\": \"car_owner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.test('owner registered', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "if (res.access_token) {",
+                  "  pm.environment.set('accessTokenOwner', res.access_token);",
+                  "  pm.environment.set('refreshTokenOwner', res.refresh_token);",
+                  "  pm.environment.set('ownerId', res.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Register as a driver. JWT saved to `accessTokenDriver`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{driverEmail}}\",\n  \"password\": \"{{driverPassword}}\",\n  \"first_name\": \"Dmitry\",\n  \"last_name\": \"Driver\",\n  \"phone\": \"+77000000002\",\n  \"role\": \"driver\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.test('driver registered', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "if (res.access_token) {",
+                  "  pm.environment.set('accessTokenDriver', res.access_token);",
+                  "  pm.environment.set('refreshTokenDriver', res.refresh_token);",
+                  "  pm.environment.set('driverId', res.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login \u2014 Owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Log in as existing owner and refresh the stored owner token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmail}}\",\n  \"password\": \"{{ownerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.environment.set('accessTokenOwner', res.access_token);",
+                  "  pm.environment.set('refreshTokenOwner', res.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login \u2014 Driver",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Log in as existing driver.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{driverEmail}}\",\n  \"password\": \"{{driverPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.environment.set('accessTokenDriver', res.access_token);",
+                  "  pm.environment.set('refreshTokenDriver', res.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Owner Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/token/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "token",
+                "refresh"
+              ]
+            },
+            "description": "Rotate the owner's refresh token. Old refresh is revoked; both access and refresh are replaced in the environment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshTokenOwner}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.environment.set('accessTokenOwner', res.access_token);",
+                  "  pm.environment.set('refreshTokenOwner', res.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /me \u2014 Owner",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
+            },
+            "description": "Return the authenticated owner's profile."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /me \u2014 Driver",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
+            },
+            "description": "Return the authenticated driver's profile."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout Owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revoke the owner's refresh token. After this, refresh will fail. Run Login again to re-issue.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshTokenOwner}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02b \u00b7 Auth \u2014 Passwordless OTP (optional)",
+      "description": "Passwordless login via email OTP. In dev mode the code is printed to the backend console (look for the '\ud83d\udce7 LOGIN OTP EMAIL' banner in the server log).",
+      "item": [
+        {
+          "name": "Request OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/otp/request",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "otp",
+                "request"
+              ]
+            },
+            "description": "Send a 6-digit OTP code to the email. In dev mode (no MAILERSEND_API_KEY), the code is printed to the server console \u2014 copy it from the backend log into `otpCode` env variable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{otpEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/otp/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "otp",
+                "verify"
+              ]
+            },
+            "description": "Verify the OTP. If the email is new, response returns `{kind:'register', registration_token}`. If existing, returns a JWT pair directly.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{otpEmail}}\",\n  \"code\": \"{{otpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.kind === 'register' && res.registration_token) {",
+                  "  pm.environment.set('registrationToken', res.registration_token);",
+                  "} else if (res.access_token) {",
+                  "  pm.environment.set('accessTokenDriver', res.access_token);",
+                  "  pm.environment.set('refreshTokenDriver', res.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Complete Registration (after verify)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/otp/complete-registration",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "otp",
+                "complete-registration"
+              ]
+            },
+            "description": "Finish registration using the token returned from Verify OTP.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registration_token\": \"{{registrationToken}}\",\n  \"first_name\": \"OTP\",\n  \"last_name\": \"User\",\n  \"password\": \"Passwordless123!\",\n  \"role\": \"driver\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.environment.set('accessTokenDriver', res.access_token);",
+                  "  pm.environment.set('refreshTokenDriver', res.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 \u00b7 Owner \u2014 Car Lifecycle",
+      "description": "Flow: Create Car (pending) \u2192 Upload cover photo (auto-publishes) \u2192 Update / Add more photos & docs / Pause when needed. All auth'd routes require the owner's Bearer token.",
+      "item": [
+        {
+          "name": "Create Car",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars"
+              ]
+            },
+            "description": "Create a listing. Starts as `status: pending` \u2014 invisible in /listings until the first photo is uploaded.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"make\": \"Toyota\",\n  \"model\": \"Camry\",\n  \"year\": 2022,\n  \"title\": \"2022 Toyota Camry \\u2014 weekly rental\",\n  \"description\": \"Clean family sedan, newly serviced.\",\n  \"body_type\": \"sedan\",\n  \"fuel_type\": \"gas\",\n  \"mileage\": 35000,\n  \"address\": \"Almaty, Dostyk ave.\",\n  \"neighborhood\": \"Samal\",\n  \"latitude\": 43.2389,\n  \"longitude\": 76.9595,\n  \"is_for_rent\": true,\n  \"weekly_rent_price\": 280,\n  \"is_for_sale\": false,\n  \"min_years_licensed\": 2,\n  \"deposit_amount\": 500,\n  \"insurance_coverage\": \"full_coverage\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) {",
+                  "  pm.environment.set('carId', res.id);",
+                  "  pm.environment.set('listingId', res.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List My Cars",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars"
+              ]
+            },
+            "description": "Owner's own cars (pending + available + paused)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Car",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars/{{carId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars",
+                "{{carId}}"
+              ]
+            },
+            "description": "Owner view of a single car, with photos & documents embedded."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Cover Photo (auto-publishes listing!)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars/{{carId}}/photos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars",
+                "{{carId}}",
+                "photos"
+              ]
+            },
+            "description": "Upload a photo in the `cover_front` slot. When a car is in `pending` status, uploading the cover photo auto-transitions status to `available` and the listing becomes visible in GET /listings. You MUST pick a file before sending.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "slot_type",
+                  "type": "text",
+                  "value": "cover_front"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) pm.environment.set('photoId', res.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Car Photos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars/{{carId}}/photos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars",
+                "{{carId}}",
+                "photos"
+              ]
+            },
+            "description": "Returns photos grouped by slot_type."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Side Photo \u2014 right",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars/{{carId}}/photos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars",
+                "{{carId}}",
+                "photos"
+              ]
+            },
+            "description": "Additional photo slots: right | left | back | dashboard.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "slot_type",
+                  "type": "text",
+                  "value": "right"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Car",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars/{{carId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars",
+                "{{carId}}"
+              ]
+            },
+            "description": "Partial update \u2014 send only the fields you want to change.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated: freshly waxed, new tires, delivery available.\",\n  \"weekly_rent_price\": 299\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Car Location",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars/{{carId}}/location",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars",
+                "{{carId}}",
+                "location"
+              ]
+            },
+            "description": "Dedicated endpoint for location-only updates.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 43.2567,\n  \"longitude\": 76.9286,\n  \"area\": \"Almaly\",\n  \"street\": \"Abai ave.\",\n  \"block\": \"42\",\n  \"zip\": \"050000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Pause Car",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars/{{carId}}/pause",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars",
+                "{{carId}}",
+                "pause"
+              ]
+            },
+            "description": "Toggle the paused state. When paused, the listing is hidden from /listings."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Car Document \u2014 inspection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars/{{carId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars",
+                "{{carId}}",
+                "documents"
+              ]
+            },
+            "description": "Car documents: inspection | registration | permit | insurance. JPEG/PNG/PDF up to 10MB.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "document_type",
+                  "type": "text",
+                  "value": "inspection"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Car Documents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars/{{carId}}/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars",
+                "{{carId}}",
+                "documents"
+              ]
+            },
+            "description": "List uploaded car documents."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Profile Photo (owner)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profile/photo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile",
+                "photo"
+              ]
+            },
+            "description": "Optional \u2014 uploads the user's profile photo. Advances onboarding for role=owner.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 \u00b7 Driver \u2014 Onboarding & Modes",
+      "description": "Documents, onboarding completion, profile photo, and switching between driver/owner modes on one account.",
+      "item": [
+        {
+          "name": "Upload Driver's License",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/documents/drivers_license",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "documents",
+                "drivers_license"
+              ]
+            },
+            "description": "Upload driver's license. Pick a PDF or image (JPEG/PNG). After both docs are uploaded, onboarding_status advances to `documents_uploaded`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) pm.environment.set('driverLicenseDocId', res.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload Registration",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/documents/registration",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "documents",
+                "registration"
+              ]
+            },
+            "description": "Upload vehicle registration document (or any stand-in PDF for demo).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) pm.environment.set('registrationDocId', res.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List My Documents",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "documents"
+              ]
+            },
+            "description": "List all user documents."
+          },
+          "response": []
+        },
+        {
+          "name": "Complete Onboarding (driver)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/onboarding/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "onboarding",
+                "complete"
+              ]
+            },
+            "description": "Marks driver onboarding complete. Requires both documents uploaded (409 otherwise)."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Profile Photo (driver)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profile/photo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile",
+                "photo"
+              ]
+            },
+            "description": "Set the driver's profile photo.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List My Profiles (mode switcher)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/profiles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "profiles"
+              ]
+            },
+            "description": "Show driver/owner profiles for this user. Both roles can exist for one account."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Owner Profile on Driver Account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/profiles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "profiles"
+              ]
+            },
+            "description": "Lazily create a second profile. Idempotent.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"car_owner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Switch to Owner Mode (issues new JWT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/active-profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "active-profile"
+              ]
+            },
+            "description": "Switch the active profile. Server returns a fresh JWT with the new role embedded. Switching to `driver` requires docs uploaded.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"car_owner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.access_token) {",
+                  "  pm.environment.set('accessTokenDriver', res.access_token);",
+                  "  pm.environment.set('refreshTokenDriver', res.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "PATCH Profile \u2014 change phone",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "profile"
+              ]
+            },
+            "description": "Update profile fields. Role changes here do NOT flip active mode \u2014 use /me/active-profile for that.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+77050001122\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 \u00b7 Listings \u2014 Public Browse",
+      "description": "Public browse endpoint a driver sees before logging in.",
+      "item": [
+        {
+          "name": "Browse Public Listings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/listings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "listings"
+              ]
+            },
+            "description": "No auth required. Returns all listings with status=available."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.test('has listings', () => pm.expect(res.listings).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search Listings \u2014 by model",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/listings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "listings"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "Camry"
+                }
+              ]
+            },
+            "description": "Full-text search across make / model / title."
+          },
+          "response": []
+        },
+        {
+          "name": "Filter Listings \u2014 rented",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/listings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "listings"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "rented"
+                }
+              ]
+            },
+            "description": "Filter by listing status. Other values: available, paused, pending, rented."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 \u00b7 Likes / Favourites",
+      "description": "",
+      "item": [
+        {
+          "name": "Like Listing (as driver)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/listings/{{listingId}}/like",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "listings",
+                "{{listingId}}",
+                "like"
+              ]
+            },
+            "description": "Idempotent like. Server stores one row per (user, listing)."
+          },
+          "response": []
+        },
+        {
+          "name": "GET My Likes",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/likes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "likes"
+              ]
+            },
+            "description": "Returns {liked_listing_ids: [...]} \u2014 driver's favourites."
+          },
+          "response": []
+        },
+        {
+          "name": "Unlike Listing",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/listings/{{listingId}}/like",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "listings",
+                "{{listingId}}",
+                "like"
+              ]
+            },
+            "description": "Idempotent unlike \u2014 safe to call even if the like doesn't exist."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 \u00b7 Lease Requests + Chat (happy path)",
+      "description": "The core booking flow: driver creates a lease request \u2192 chat is auto-created \u2192 conversation \u2192 owner accepts.",
+      "item": [
+        {
+          "name": "Create Lease Request (driver \u2192 owner)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/listings/{{listingId}}/lease-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "listings",
+                "{{listingId}}",
+                "lease-requests"
+              ]
+            },
+            "description": "Creates a lease request AND the chat between driver and owner in one call. Server broadcasts `lease_request_created` via WebSocket to the owner. Driver docs (if uploaded) are auto-shared with the owner for this request.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weeks\": 2,\n  \"message\": \"Hi Olga! I'd like to rent the Camry for 2 weeks.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.chat_id) pm.environment.set('chatId', res.chat_id);",
+                  "if (res.lease_request && res.lease_request.id) pm.environment.set('leaseRequestId', res.lease_request.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List Lease Requests in Chat",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/lease-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats",
+                "{{chatId}}",
+                "lease-requests"
+              ]
+            },
+            "description": "Both participants can list the chat's lease requests."
+          },
+          "response": []
+        },
+        {
+          "name": "List Shared Documents in Chat",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/shared-documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats",
+                "{{chatId}}",
+                "shared-documents"
+              ]
+            },
+            "description": "Driver's shared documents (e.g. license, registration) attached to this lease request. Empty if the driver uploaded no documents before creating the lease request."
+          },
+          "response": []
+        },
+        {
+          "name": "Owner Lists Chats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats"
+              ]
+            },
+            "description": "List chats for the owner with unread counters, counterparty info, and car cover photo URL."
+          },
+          "response": []
+        },
+        {
+          "name": "Driver Lists Chats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Get Chat Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/details",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats",
+                "{{chatId}}",
+                "details"
+              ]
+            },
+            "description": "Richer chat header with resolved participant names."
+          },
+          "response": []
+        },
+        {
+          "name": "Owner Sends Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats",
+                "{{chatId}}",
+                "messages"
+              ]
+            },
+            "description": "Sends a text message. Server broadcasts `new_message` via WS to the other participant. Note: immediate response has `sender_name: Unknown` (cosmetic); WS event carries the correct name.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Hi Dmitry \\u2014 the car is yours. Any questions about pickup?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) pm.environment.set('messageId', res.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Driver Sends Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats",
+                "{{chatId}}",
+                "messages"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Thanks! Can I pick up Saturday morning around 9 AM?\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Messages (with pagination)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/messages",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats",
+                "{{chatId}}",
+                "messages"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "Reverse-chronological. Returns `sender_name` correctly via DB join."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Chat as Read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats",
+                "{{chatId}}",
+                "read"
+              ]
+            },
+            "description": "Resets unread counter for the caller. Broadcasts a read event via WS."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Chat Settings (driver)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats",
+                "{{chatId}}",
+                "settings"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notifications_muted\": false,\n  \"auto_translate\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Chat Attachment (image/doc)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats",
+                "{{chatId}}",
+                "attachments"
+              ]
+            },
+            "description": "Upload an attachment (image, pdf, video) to the chat. Kind is auto-detected from MIME.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Chat Attachments",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/attachments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats",
+                "{{chatId}}",
+                "attachments"
+              ]
+            },
+            "description": "Optional query `kind=image|document|video`."
+          },
+          "response": []
+        },
+        {
+          "name": "Owner Accepts Lease Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lease-requests/{{leaseRequestId}}/accept",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lease-requests",
+                "{{leaseRequestId}}",
+                "accept"
+              ]
+            },
+            "description": "Status: requested \u2192 accepted. Only the owner can accept. Server broadcasts `lease_request_updated` via WS to the driver."
+          },
+          "response": []
+        },
+        {
+          "name": "Archive Chat",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/chats/{{chatId}}/archive",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "chats",
+                "{{chatId}}",
+                "archive"
+              ]
+            },
+            "description": "Soft-archives the chat for the caller only.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"archived\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "08 \u00b7 Today / Actions",
+      "description": "",
+      "item": [
+        {
+          "name": "Today Actions (owner)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/today/actions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "today",
+                "actions"
+              ]
+            },
+            "description": "Returns pending lease requests where the caller is the owner. Used to power the 'Today' home tab. Filtered by `last_seen_actions_at`."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Actions Seen",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/today/actions/seen",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "today",
+                "actions",
+                "seen"
+              ]
+            },
+            "description": "Update last_seen marker so existing actions no longer show as 'unread'."
+          },
+          "response": []
+        },
+        {
+          "name": "My Actions (deprecated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/actions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me",
+                "actions"
+              ]
+            },
+            "description": "Legacy endpoint \u2014 returns in-chat Requests. Prefer /today/actions for lease requests."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "09 \u00b7 Payments & Alternate Branches (Stripe)",
+      "description": "Stripe payment flow plus decline/cancel. Payment endpoints require real Stripe keys; decline/cancel work without Stripe.",
+      "item": [
+        {
+          "name": "Create Payment Intent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lease-requests/{{leaseRequestId}}/payments/intent",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lease-requests",
+                "{{leaseRequestId}}",
+                "payments",
+                "intent"
+              ]
+            },
+            "description": "Returns Stripe client_secret + publishable_key + ephemeral_key. REQUIRES `STRIPE_SECRET_KEY` env on the backend. Without a key, returns 500 STRIPE_ERROR \u2014 that's expected in a local-only demo."
+          },
+          "response": []
+        },
+        {
+          "name": "Sync Payment Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lease-requests/{{leaseRequestId}}/payments/sync",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lease-requests",
+                "{{leaseRequestId}}",
+                "payments",
+                "sync"
+              ]
+            },
+            "description": "Re-queries Stripe and reconciles payment status locally. Either participant can call."
+          },
+          "response": []
+        },
+        {
+          "name": "Decline Lease Request (alternate branch)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lease-requests/{{leaseRequestId}}/decline",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lease-requests",
+                "{{leaseRequestId}}",
+                "decline"
+              ]
+            },
+            "description": "Status: requested \u2192 declined. Only owner can decline."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Lease Request (alternate branch)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lease-requests/{{leaseRequestId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lease-requests",
+                "{{leaseRequestId}}",
+                "cancel"
+              ]
+            },
+            "description": "Creator can cancel anytime before paid. Transitions requested/accepted/payment_pending \u2192 cancelled."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10 \u00b7 Optional \u2014 Password Reset, Deletes",
+      "description": "Password reset (requires copying the token from the dev console) and delete endpoints for tear-down.",
+      "item": [
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/password/forgot",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "password",
+                "forgot"
+              ]
+            },
+            "description": "Dev mode: reset token is printed to the server console. Copy from the '\ud83d\udce7 PASSWORD RESET EMAIL' banner into `passwordResetToken`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{ownerEmail}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/password/reset",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "password",
+                "reset"
+              ]
+            },
+            "description": "Consumes a single-use reset token. Revokes all existing refresh tokens for that user.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{passwordResetToken}}\",\n  \"new_password\": \"NewDemoPass123!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Public Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/users/{{ownerId}}/profile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "users",
+                "{{ownerId}}",
+                "profile"
+              ]
+            },
+            "description": "Counterparty profile \u2014 used in chat screens to show the other person's name/photo."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Driver's License Document",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenDriver}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/documents/{{driverLicenseDocId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "documents",
+                "{{driverLicenseDocId}}"
+              ]
+            },
+            "description": "Deletes the uploaded document and its file on disk."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Car Photo",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars/{{carId}}/photos/{{photoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars",
+                "{{carId}}",
+                "photos",
+                "{{photoId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Car",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessTokenOwner}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cars/{{carId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cars",
+                "{{carId}}"
+              ]
+            },
+            "description": "Deletes the car + cascades photos/documents. Irreversible."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11 \u00b7 WebSocket \u2014 How to Connect",
+      "description": "Postman supports WebSocket requests as a separate request type (New \u2192 WebSocket Request).\n\n**URL:** `{{wsUrl}}?token={{accessTokenOwner}}`  (to receive owner events)\nor      `{{wsUrl}}?token={{accessTokenDriver}}`  (to receive driver events)\n\n### Events the server broadcasts\n- `lease_request_created` \u2014 fired when a driver posts a lease request; delivered to the **owner**\n- `lease_request_updated` \u2014 fired on accept/decline/cancel/paid; delivered to both parties\n- `new_message` \u2014 fired when a chat message is sent; delivered to the other participant\n- `request_created` / `request_updated` \u2014 for in-chat Request objects (manual_payment, etc.)\n\n### Live demo recipe\n1. In one Postman WebSocket tab, connect as owner using `{{accessTokenOwner}}`.\n2. In the collection, run **07 \u00b7 Create Lease Request** as the driver.\n3. The WebSocket tab shows a `lease_request_created` event within ~1 second.\n4. Run **Owner Sends Message** \u2014 the owner's WS tab echoes nothing (they are the sender). Connect a second WS tab as driver and re-send \u2014 it will receive `new_message`.\n\nKeepalive: server sends a WS ping every ~54 s; Postman's built-in handling is fine.\nAuth failure: if the token is invalid or expired, upgrade fails with 401.",
+      "item": []
+    }
+  ]
+}
