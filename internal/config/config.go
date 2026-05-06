@@ -58,8 +58,8 @@ func Load() (*Config, error) {
 		SendGridFromName:  getEnv("SENDGRID_FROM_NAME", "DriveBai"),
 
 		MailerSendAPIKey: getEnv("MAILERSEND_API_KEY", ""),
-		MailerFromEmail:  getEnv("MAIL_FROM_EMAIL", "noreply@drivebai.com"),
-		MailerFromName:   getEnv("MAIL_FROM_NAME", "DrivaBai"),
+		MailerFromEmail:  getEnv("MAILERSEND_FROM_EMAIL", "noreply@test-68zxl276xje4j905.mlsender.net"),
+		MailerFromName:   getEnv("MAILERSEND_FROM_NAME", "DriveBai"),
 
 		AppDeeplinkScheme: getEnv("APP_DEEPLINK_SCHEME", "drivebai"),
 		AppBaseURL:        getEnv("APP_BASE_URL", "http://localhost:8080"),
