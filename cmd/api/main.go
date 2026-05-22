@@ -17,6 +17,8 @@ import (
 	"github.com/drivebai/backend/internal/email"
 	"github.com/drivebai/backend/internal/handlers"
 	"github.com/drivebai/backend/internal/middleware"
+	"github.com/drivebai/backend/internal/models"
+	"github.com/drivebai/backend/internal/push"
 	"github.com/drivebai/backend/internal/repository"
 	stripeService "github.com/drivebai/backend/internal/stripe"
 	"github.com/drivebai/backend/internal/ws"
@@ -75,6 +77,10 @@ func main() {
 	chatRepo := repository.NewChatRepository(db)
 	leaseRepo := repository.NewLeaseRequestRepository(db)
 	sharedDocsRepo := repository.NewSharedDocumentRepository(db)
+	adminRepo := repository.NewAdminRepository(db)
+	supportRepo := repository.NewSupportRepository(db)
+	notifRepo := repository.NewNotificationRepository(db)
+	deviceTokenRepo := repository.NewDeviceTokenRepository(db)
 
 	// Ensure uploads directory exists
 	uploadDir := cfg.UploadDir
@@ -104,15 +110,24 @@ func main() {
 		logger.Warn("STRIPE_WEBHOOK_SECRET is empty — webhooks will fail signature verification")
 	}
 
+	// Initialize push notification service (nil if APNs not configured)
+	pushSvc := push.NewService(cfg.AppleTeamID, cfg.APNSKeyID, cfg.APNSAuthKeyP8, cfg.IOSBundleID, cfg.APNSSandbox, logger)
+
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(userRepo, tokenRepo, profileRepo, jwtSvc, emailSvc, cfg, logger)
 	otpAuthHandler := handlers.NewOTPAuthHandler(userRepo, tokenRepo, loginOTPRepo, profileRepo, jwtSvc, otpEmailSvc, logger)
 	userHandler := handlers.NewUserHandler(userRepo, docRepo, profileRepo, tokenRepo, jwtSvc, uploadDir, logger)
-	carHandler := handlers.NewCarHandler(carRepo, carPhotoRepo, carDocRepo, userRepo, uploadDir)
+	carHandler := handlers.NewCarHandler(carRepo, carPhotoRepo, carDocRepo, userRepo, uploadDir, cfg.MinWeeklyRentPrice, cfg.AutoApproveCars)
 	likesHandler := handlers.NewLikesHandler(likesRepo, carRepo)
 	chatHandler := handlers.NewChatHandler(chatRepo, uploadDir, wsHub, jwtSvc, logger)
-	leaseHandler := handlers.NewLeaseRequestHandler(leaseRepo, carRepo, userRepo, chatRepo, docRepo, sharedDocsRepo, stripeSvc, wsHub, logger)
+	notifHandler := handlers.NewNotificationHandler(notifRepo, deviceTokenRepo, wsHub, pushSvc, logger)
+	deviceTokenHandler := handlers.NewDeviceTokenHandler(deviceTokenRepo, logger)
+	leaseHandler := handlers.NewLeaseRequestHandler(leaseRepo, carRepo, userRepo, chatRepo, docRepo, sharedDocsRepo, stripeSvc, wsHub, notifHandler, logger)
 	todayHandler := handlers.NewTodayHandler(leaseRepo, userRepo, logger)
+	accidentRepo := repository.NewAccidentRepository(db)
+	adminHandler := handlers.NewAdminHandler(adminRepo, wsHub, logger)
+	supportHandler := handlers.NewSupportHandler(supportRepo, adminRepo, wsHub, logger)
+	accidentHandler := handlers.NewAccidentHandler(accidentRepo, adminRepo, wsHub, uploadDir, logger)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -199,6 +214,15 @@ func main() {
 			r.Get("/today/actions", todayHandler.GetActions)
 			r.Post("/today/actions/seen", todayHandler.MarkActionsSeen)
 
+			// Notifications
+			r.Get("/notifications", notifHandler.ListNotifications)
+			r.Post("/notifications/{id}/read", notifHandler.MarkRead)
+			r.Post("/notifications/read-all", notifHandler.MarkAllRead)
+
+			// Device tokens (push notifications)
+			r.Post("/me/device-token", deviceTokenHandler.RegisterDeviceToken)
+			r.Delete("/me/device-token", deviceTokenHandler.DeleteDeviceToken)
+
 			// Likes/Favorites
 			r.Get("/me/likes", likesHandler.GetLikedListings)
 			r.Post("/listings/{listingId}/like", likesHandler.LikeListing)
@@ -253,10 +277,67 @@ func main() {
 			r.Post("/lease-requests/{id}/accept", leaseHandler.AcceptLeaseRequest)
 			r.Post("/lease-requests/{id}/decline", leaseHandler.DeclineLeaseRequest)
 			r.Post("/lease-requests/{id}/cancel", leaseHandler.CancelLeaseRequest)
+			r.Patch("/lease-requests/{id}/price", leaseHandler.UpdateOfferedPrice)
 
 			// Payments (Stripe)
 			r.Post("/lease-requests/{id}/payments/intent", leaseHandler.CreatePaymentIntent)
 			r.Post("/lease-requests/{id}/payments/sync", leaseHandler.SyncPaymentStatus)
+
+			// Accident reports (user-facing)
+			r.Route("/accidents", func(r chi.Router) {
+				r.Post("/", accidentHandler.Create)
+				r.Get("/", accidentHandler.List)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", accidentHandler.Get)
+					r.Patch("/", accidentHandler.Patch)
+					r.Post("/attachments", accidentHandler.Upload)
+					r.Delete("/attachments/{attachId}", accidentHandler.DeleteAttachment)
+					r.Post("/sign", accidentHandler.Sign)
+					r.Post("/submit", accidentHandler.Submit)
+				})
+			})
+
+			// Support chat (user-facing)
+			r.Route("/support", func(r chi.Router) {
+				r.Post("/chats", supportHandler.GetOrCreate)
+				r.Route("/chats/{chatId}", func(r chi.Router) {
+					r.Get("/messages", supportHandler.ListMessages)
+					r.Post("/messages", supportHandler.SendMessage)
+					r.Post("/read", supportHandler.MarkRead)
+				})
+			})
+
+			// Admin panel API — require role=admin
+			r.Route("/admin", func(r chi.Router) {
+				r.Use(middleware.RequireRole(models.RoleAdmin))
+
+				r.Get("/users", adminHandler.ListUsers)
+				r.Get("/users/{id}", adminHandler.GetUser)
+				r.Patch("/users/{id}/block", adminHandler.BlockUser)
+
+				r.Get("/cars", adminHandler.ListCars)
+				r.Get("/cars/{id}", adminHandler.GetCar)
+				r.Patch("/cars/{id}/approve", adminHandler.ApproveCar)
+
+				r.Get("/chats", adminHandler.ListChats)
+				r.Get("/chats/{id}/messages", adminHandler.ListChatMessages)
+				r.Post("/chats/{id}/messages", adminHandler.SendChatMessage)
+
+				r.Get("/rents", adminHandler.ListRents)
+				r.Get("/rents/{id}", adminHandler.GetRent)
+
+				r.Get("/support/chats", adminHandler.ListSupportChats)
+				r.Get("/support/chats/{id}/messages", adminHandler.ListSupportMessages)
+				r.Post("/support/chats/{id}/messages", adminHandler.SendSupportMessage)
+				r.Post("/support/chats/{id}/read", adminHandler.MarkSupportChatRead)
+
+				r.Get("/accidents", adminHandler.ListAccidents)
+				r.Get("/accidents/{id}", adminHandler.GetAccident)
+				r.Patch("/accidents/{id}/status", adminHandler.UpdateAccidentStatus)
+
+				r.Get("/car-sells", adminHandler.ListCarSells)
+				r.Get("/car-sells/{id}", adminHandler.GetCarSell)
+			})
 		})
 	})
 

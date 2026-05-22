@@ -38,6 +38,20 @@ type Config struct {
 	StripePublishableKey string
 	StripeWebhookSecret  string
 	PlatformFeeBPS       int // basis points, e.g. 500 = 5%
+
+	// Listing price constraints
+	MinWeeklyRentPrice float64 // minimum allowed weekly rent price; default 50
+
+	// Test/staging bypass: auto-approve newly created cars so they appear in Discover immediately.
+	// Set AUTO_APPROVE_CARS=true in dev/staging; must be false (default) in production.
+	AutoApproveCars bool
+
+	// APNs push notification (all required; if any empty, push is disabled)
+	AppleTeamID     string
+	APNSKeyID       string
+	APNSAuthKeyP8   string // base64-encoded .p8 key file contents
+	IOSBundleID     string
+	APNSSandbox     bool   // true for dev/TestFlight builds
 }
 
 func Load() (*Config, error) {
@@ -58,8 +72,8 @@ func Load() (*Config, error) {
 		SendGridFromName:  getEnv("SENDGRID_FROM_NAME", "DriveBai"),
 
 		MailerSendAPIKey: getEnv("MAILERSEND_API_KEY", ""),
-		MailerFromEmail:  getEnv("MAILERSEND_FROM_EMAIL", "noreply@test-68zxl276xje4j905.mlsender.net"),
-		MailerFromName:   getEnv("MAILERSEND_FROM_NAME", "DriveBai"),
+		MailerFromEmail:  getEnv("MAIL_FROM_EMAIL", "noreply@drivebai.com"),
+		MailerFromName:   getEnv("MAIL_FROM_NAME", "DrivaBai"),
 
 		AppDeeplinkScheme: getEnv("APP_DEEPLINK_SCHEME", "drivebai"),
 		AppBaseURL:        getEnv("APP_BASE_URL", "http://localhost:8080"),
@@ -70,6 +84,15 @@ func Load() (*Config, error) {
 		StripePublishableKey: getEnv("STRIPE_PUBLISHABLE_KEY", ""),
 		StripeWebhookSecret:  getEnv("STRIPE_WEBHOOK_SECRET", ""),
 		PlatformFeeBPS:       getIntEnv("PLATFORM_FEE_BPS", 500), // default 5%
+
+		MinWeeklyRentPrice: getFloat64Env("MIN_WEEKLY_RENT_PRICE", 50),
+		AutoApproveCars:    getEnv("AUTO_APPROVE_CARS", "false") == "true",
+
+		AppleTeamID:   getEnv("APPLE_TEAM_ID", ""),
+		APNSKeyID:     getEnv("APNS_KEY_ID", ""),
+		APNSAuthKeyP8: getEnv("APNS_AUTH_KEY_P8", ""),
+		IOSBundleID:   getEnv("IOS_BUNDLE_ID", ""),
+		APNSSandbox:   getEnv("APNS_SANDBOX", "true") != "false",
 	}
 
 	return cfg, nil
@@ -95,6 +118,15 @@ func getIntEnv(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if i, err := strconv.Atoi(value); err == nil {
 			return i
+		}
+	}
+	return defaultValue
+}
+
+func getFloat64Env(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if f, err := strconv.ParseFloat(value, 64); err == nil {
+			return f
 		}
 	}
 	return defaultValue
