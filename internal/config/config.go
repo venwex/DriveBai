@@ -47,11 +47,11 @@ type Config struct {
 	AutoApproveCars bool
 
 	// APNs push notification (all required; if any empty, push is disabled)
-	AppleTeamID     string
-	APNSKeyID       string
-	APNSAuthKeyP8   string // base64-encoded .p8 key file contents
-	IOSBundleID     string
-	APNSSandbox     bool   // true for dev/TestFlight builds
+	AppleTeamID   string
+	APNSKeyID     string
+	APNSAuthKeyP8 string // base64-encoded .p8 key file contents
+	IOSBundleID   string
+	APNSSandbox   bool // true for dev/TestFlight builds
 }
 
 func Load() (*Config, error) {
@@ -64,7 +64,7 @@ func Load() (*Config, error) {
 		DatabaseURL: getEnv("DATABASE_URL", "postgres://drivebai:drivebai_secret@localhost:5432/drivebai?sslmode=disable"),
 
 		JWTSecret:          getEnv("JWT_SECRET", "dev-secret-change-me"),
-		JWTAccessTokenTTL:  getDuration("JWT_ACCESS_TOKEN_TTL", 15*time.Minute),
+		JWTAccessTokenTTL:  getDuration("JWT_ACCESS_TOKEN_TTL", 15*time.Hour),
 		JWTRefreshTokenTTL: getDuration("JWT_REFRESH_TOKEN_TTL", 30*24*time.Hour),
 
 		SendGridAPIKey:    getEnv("SENDGRID_API_KEY", ""),
